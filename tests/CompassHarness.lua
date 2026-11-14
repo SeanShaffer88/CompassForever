@@ -606,7 +606,7 @@ assert(not frame:IsVisible() and not testLabel:IsShown() and ForeverCompassDB.en
 slash("toggle")
 questText(1, "! 300 yd")
 
-local function checkCenteredOverflow(count, center, requireBelow)
+local function checkCenteredOverflow(count, center, requireBelow, maxRows)
     checkViewport(count)
     local rows = {}
     for slot = 1, count do
@@ -623,6 +623,13 @@ local function checkCenteredOverflow(count, center, requireBelow)
         row.left, row.right = math.min(row.left, left), math.max(row.right, right)
         rows[y] = row
     end
+    if maxRows then
+        local rowCount = 0
+        for _ in pairs(rows) do rowCount = rowCount + 1 end
+        assert(rowCount <= maxRows, "Full-size overflow wraps into a shorter block")
+        local _, _, bottom = labelBounds(questMarker(count))
+        assert(bottom + frame.centerY >= 240, "Desktop overflow clears the lower HUD area")
+    end
     for _, row in pairs(rows) do
         assert(math.abs((row.left + row.right) / 2 - center) <= 4,
             "Each row, including the last, is centered")
@@ -633,9 +640,9 @@ UIParent:SetSize(1920, 1080)
 UIParent.centerX, UIParent.centerY = 960, 540
 frame.centerX, frame.centerY = 960, 627
 slash("test")
-checkCenteredOverflow(64, 0, true)
+checkCenteredOverflow(64, 0, true, 10)
 slash("test 128")
-checkCenteredOverflow(128, 0, true)
+checkCenteredOverflow(128, 0, true, 22)
 assert(questMarker(128).labels[1].textScale == 1, "Normal desktop viewport preserves full-size distance text")
 
 UIParent:SetSize(640, 360)

@@ -486,7 +486,8 @@ local function compactQuestLayout(count, left, right, bottom, top)
         local rows = math.ceil(count / candidate)
         local candidateScale = math.min(1, availableWidth / (candidate * cellWidth),
             availableHeight / (rows * cellHeight))
-        if candidateScale > scale then
+        -- At the same text size, the wider grid keeps the last row closer to the compass.
+        if candidateScale >= scale then
             scale, columns = candidateScale, candidate
         end
     end
