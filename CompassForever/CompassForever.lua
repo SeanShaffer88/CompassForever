@@ -1,23 +1,9 @@
 local addonName, ns = ...
 local halfWidth, halfView = 280, 112
 local markerView = halfView - 12
-local themes = {
-    { id = "classic", name = "Classic", arc = {1, 0.97, 0.89}, quest = {1, 0.77, 0.32}, pin = {0.82, 0.47, 1} },
-    { id = "frost", name = "Frost", arc = {0.75, 0.92, 1}, quest = {0.53, 1, 0.85}, pin = {0.77, 0.72, 1} },
-    { id = "ember", name = "Ember", arc = {1, 0.83, 0.62}, quest = {1, 0.64, 0.38}, pin = {1, 0.55, 0.72} },
-    { id = "contrast", name = "High Contrast", arc = {1, 1, 1}, quest = {1, 0.9, 0.15}, pin = {0.47, 0.95, 1} },
-}
-local themesByID = {}
-for _, theme in ipairs(themes) do
-    themesByID[theme.id] = theme
-end
-local activeTheme = themes[1]
-local styles = {
-    { id = "arc", name = "Arc", rise = 62 },
-    { id = "bar", name = "Framed", rise = 0 },
-    { id = "tactical", name = "Tactical", rise = 12 },
-    { id = "flight", name = "Flight", rise = 9 },
-}
+local styles = ns.CompassStyles
+local styleY = ns.CompassStyleY
+local styleSegmentShown = ns.CompassStyleSegmentShown
 local stylesByID = {}
 for _, style in ipairs(styles) do
     stylesByID[style.id] = style
@@ -34,18 +20,6 @@ frame:Hide()
 local headingLayer = CreateFrame("Frame", "ForeverCompassHeading", frame)
 headingLayer:SetAllPoints(frame)
 headingLayer:Hide()
-
-local function styleY(styleID, fraction)
-    local style = stylesByID[styleID]
-    if styleID == "arc" then
-        return -style.rise * fraction ^ 2
-    elseif styleID == "tactical" then
-        return -style.rise * math.max(0, 1 - math.abs(fraction) * halfWidth / 42)
-    elseif styleID == "flight" then
-        return style.rise * math.max(0, 1 - math.abs(fraction) * halfWidth / 14)
-    end
-    return 0
-end
 
 local function arcY(x)
     return styleY(activeStyle.id, x / halfWidth)
@@ -68,7 +42,7 @@ for index = 1, 40 do
     local fromX = -halfWidth + (index - 1) * halfWidth / 20
     local toX = -halfWidth + index * halfWidth / 20
     local alpha = 0.85 - 0.38 * (math.abs((fromX + toX) / 2) / halfWidth) ^ 3
-    local color = activeTheme.arc
+    local color = activeStyle.arc
     local segment = makeLine(frame, "BACKGROUND", 2, color[1], color[2], color[3], alpha)
     setLine(segment, frame, fromX, arcY(fromX), toX, arcY(toX))
     arc[index] = { line = segment, alpha = alpha, fromX = fromX, toX = toX }
@@ -77,44 +51,30 @@ end
 local detailLayer = CreateFrame("Frame", "CompassForeverStyleDetails", frame)
 detailLayer:SetAllPoints(frame)
 local details = {}
-for index = 1, 4 do
-    local line = makeLine(detailLayer, "BACKGROUND", 1, 1, 1, 1, 0.45)
-    line:Hide()
-    details[index] = line
-end
-
 local function positionStyleDetails()
-    for _, line in ipairs(details) do
-        line:Hide()
+    local color = activeStyle.arc
+    for index, decoration in ipairs(activeStyle.details) do
+        local width, alpha = decoration[5] or 1, decoration[6] or 0.45
+        local line = details[index]
+        if not line then
+            line = makeLine(detailLayer, "BACKGROUND", width, color[1], color[2], color[3], alpha)
+            details[index] = line
+        else
+            line:SetThickness(width)
+            line:SetColorTexture(color[1], color[2], color[3], alpha)
+        end
+        setLine(line, detailLayer, decoration[1], decoration[2], decoration[3], decoration[4])
+        line:Show()
     end
-    if activeStyle.id == "bar" then
-        setLine(details[1], detailLayer, -halfWidth, 14, halfWidth, 14)
-        setLine(details[2], detailLayer, -halfWidth, -14, halfWidth, -14)
-        setLine(details[3], detailLayer, -halfWidth, -14, -halfWidth, 14)
-        setLine(details[4], detailLayer, halfWidth, -14, halfWidth, 14)
-        for _, line in ipairs(details) do
-            line:Show()
-        end
-    elseif activeStyle.id == "tactical" then
-        setLine(details[1], detailLayer, -5, 9, 0, 4)
-        setLine(details[2], detailLayer, 0, 4, 5, 9)
-        details[1]:Show()
-        details[2]:Show()
-    elseif activeStyle.id == "flight" then
-        setLine(details[1], detailLayer, -14, 0, 0, 9)
-        setLine(details[2], detailLayer, 0, 9, 14, 0)
-        setLine(details[3], detailLayer, -halfWidth, -8, -halfWidth + 18, -8)
-        setLine(details[4], detailLayer, halfWidth - 18, -8, halfWidth, -8)
-        for _, line in ipairs(details) do
-            line:Show()
-        end
+    for index = #activeStyle.details + 1, #details do
+        details[index]:Hide()
     end
 end
 
 local ticks = {}
 for bearing = 0, 345, 15 do
     local mark = directions[bearing]
-    local color = activeTheme.arc
+    local color = activeStyle.arc
     local line = makeLine(headingLayer, "ARTWORK", mark and 2 or 1.2,
         color[1], color[2], color[3], mark and 1 or 0.75)
     local label
@@ -152,7 +112,7 @@ local function updateHeading(heading)
     for _, tick in ipairs(ticks) do
         local offset = relativeBearing(tick.bearing, heading)
         local visible = math.abs(offset) <= halfView
-        tick.line:SetShown(visible)
+        tick.line:SetShown(visible and (tick.label ~= nil or activeStyle.minorTicks ~= false))
         if tick.label then
             tick.label:SetShown(visible and settings.showCardinals)
         end
@@ -160,14 +120,14 @@ local function updateHeading(heading)
             local x = offset * halfWidth / halfView
             local y = arcY(x)
             local length = tick.label and 9 or 5
-            if activeStyle.id == "flight" then
+            if activeStyle.tickBelow then
                 setLine(tick.line, headingLayer, x, y - length * 2, x, y)
             else
                 setLine(tick.line, headingLayer, x, y - length, x, y + length)
             end
             if tick.label then
                 tick.label:ClearAllPoints()
-                local labelInset = activeStyle.id == "bar" and 18 or 12
+                local labelInset = activeStyle.labelInset or 12
                 tick.label:SetPoint("BOTTOM", headingLayer, "CENTER", x, y + labelInset)
             end
         end
@@ -185,10 +145,10 @@ local waypoint = CreateFrame("Frame", "ForeverCompassWaypoint", frame)
 waypoint:SetSize(1, 1)
 waypoint:Hide()
 local distanceLabel = waypoint:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-distanceLabel:SetTextColor(unpack(activeTheme.arc))
+distanceLabel:SetTextColor(unpack(activeStyle.arc))
 local diamond = {}
 for index = 1, 4 do
-    local color = activeTheme.pin
+    local color = activeStyle.pin
     diamond[index] = makeLine(waypoint, "ARTWORK", 2, color[1], color[2], color[3], 1)
 end
 
@@ -305,7 +265,7 @@ end
 local questLog = C_QuestLog
 local questMarkers = {}
 local function colorQuestMarker(marker)
-    local color = activeTheme.quest
+    local color = activeStyle.quest
     marker.label:SetTextColor(unpack(color))
     marker.leader:SetColorTexture(color[1] * 0.87, color[2] * 0.83, color[3] * 0.94, 0.35)
 end
@@ -714,44 +674,36 @@ testLabel:SetPoint("CENTER", frame, "CENTER", 0, 51)
 testLabel:SetText("Test Mode")
 testLabel:Hide()
 
-local function applyTheme()
-    activeTheme = themesByID[settings.theme]
-    local color = activeTheme.arc
-    for _, segment in ipairs(arc) do
+local function applyStyle()
+    activeStyle = stylesByID[settings.style]
+    local color = activeStyle.arc
+    for index, segment in ipairs(arc) do
+        local x1, x2 = segment.fromX, segment.toX
+        setLine(segment.line, frame, x1, arcY(x1), x2, arcY(x2))
+        segment.line:SetThickness(activeStyle.width)
         segment.line:SetColorTexture(color[1], color[2], color[3], segment.alpha)
+        segment.line:SetShown(styleSegmentShown(activeStyle.id, index, #arc))
     end
-    for _, line in ipairs(details) do
-        line:SetColorTexture(color[1], color[2], color[3], 0.45)
-    end
+    positionStyleDetails()
     for _, tick in ipairs(ticks) do
+        local tickWidth = activeStyle.tickWidth or (tick.label and 2 or 1.2)
+        tick.line:SetThickness(tickWidth)
         tick.line:SetColorTexture(color[1], color[2], color[3], tick.label and 1 or 0.75)
         if tick.label then
             tick.label:SetTextColor(unpack(color))
         end
     end
     distanceLabel:SetTextColor(unpack(color))
-    local pin = activeTheme.pin
+    local pin = activeStyle.pin
     for _, edge in ipairs(diamond) do
         edge:SetColorTexture(pin[1], pin[2], pin[3], 1)
     end
     for _, marker in ipairs(questMarkers) do
         colorQuestMarker(marker)
-    end
-    testLabel:SetTextColor(unpack(activeTheme.quest))
-end
-
-local function applyStyle()
-    activeStyle = stylesByID[settings.style]
-    for index, segment in ipairs(arc) do
-        local x1, x2 = segment.fromX, segment.toX
-        setLine(segment.line, frame, x1, arcY(x1), x2, arcY(x2))
-        segment.line:SetShown(activeStyle.id ~= "flight" or (index ~= 20 and index ~= 21))
-    end
-    positionStyleDetails()
-    previousHeading, previousOffset, lastQuestLeft = false, nil, nil
-    for _, marker in ipairs(questMarkers) do
         marker.leaderX = nil
     end
+    testLabel:SetTextColor(unpack(activeStyle.quest))
+    previousHeading, previousOffset, lastQuestLeft = false, nil, nil
 end
 
 local function refreshSettingsUI()
@@ -863,10 +815,6 @@ local function setPreference(key, value)
         if type(value) ~= "boolean" then
             return
         end
-    elseif key == "theme" then
-        if type(value) ~= "string" or not themesByID[value] then
-            return
-        end
     elseif key == "style" then
         if type(value) ~= "string" or not stylesByID[value] then
             return
@@ -875,7 +823,7 @@ local function setPreference(key, value)
         if not finite(value) then
             return
         end
-        value = math.max(0.35, math.min(1, value))
+        value = math.max(0, math.min(1, value))
     else
         return
     end
@@ -886,8 +834,6 @@ local function setPreference(key, value)
     settings[key] = value
     if key == "enabled" then
         updateVisibility()
-    elseif key == "theme" then
-        applyTheme()
     elseif key == "opacity" then
         frame:SetAlpha(value)
     elseif key ~= "showMinimap" then
@@ -948,16 +894,13 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
         for key in pairs(switches) do
             settings[key] = settings[key] ~= false
         end
-        if type(settings.theme) ~= "string" or not themesByID[settings.theme] then
-            settings.theme = themes[1].id
-        end
+        settings.theme = nil
         if type(settings.style) ~= "string" or not stylesByID[settings.style] then
             settings.style = styles[1].id
         end
-        settings.opacity = finite(settings.opacity) and math.max(0.35, math.min(1, settings.opacity)) or 1
+        settings.opacity = finite(settings.opacity) and math.max(0, math.min(1, settings.opacity)) or 1
         settings.x = finite(settings.x) and settings.x or 0
         settings.y = finite(settings.y) and settings.y or 88
-        applyTheme()
         applyStyle()
         frame:SetAlpha(settings.opacity)
         place()
@@ -966,9 +909,9 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
             settingsUI = ns.CreateSettingsUI({
                 get = function() return settings end,
                 set = setPreference,
-                themes = themes,
                 styles = styles,
                 styleY = styleY,
+                styleSegmentShown = styleSegmentShown,
                 move = startOrStopMove,
                 resetPosition = resetPosition,
                 test = setTestCount,

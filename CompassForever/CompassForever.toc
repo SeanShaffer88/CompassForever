@@ -2,7 +2,8 @@
 ## Title: CompassForever
 ## Notes: A customizable compass HUD for watched quest objectives and your World Map pin.
 ## Author: Malikor
-## Version: 0.5.0
+## Version: 0.5.1
 ## SavedVariables: ForeverCompassDB
+Styles.lua
 Settings.lua
 CompassForever.lua
