@@ -1,6 +1,7 @@
 local addonName, ns = ...
 local halfWidth, halfView = 280, 112
 local markerView = halfView - 12
+local minScale, maxScale, scaleStep = 60, 150, 5
 local styles = ns.CompassStyles
 local styleY = ns.CompassStyleY
 local styleSegmentShown = ns.CompassStyleSegmentShown
@@ -16,6 +17,10 @@ local frame = CreateFrame("Frame", "ForeverCompassFrame", UIParent)
 frame:SetSize(halfWidth * 2, 280)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 88)
 frame:Hide()
+
+local function hudScale()
+    return frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+end
 
 local headingLayer = CreateFrame("Frame", "ForeverCompassHeading", frame)
 headingLayer:SetAllPoints(frame)
@@ -514,7 +519,7 @@ local function normalQuestLayout(count, left, right, bottom, top)
     return true
 end
 
-local function compactQuestLayout(count, left, right, bottom, top)
+local function compactQuestLayout(count, left, right, bottom, top, scaleRatio)
     local widest, tallest = 0, 0
     for index = 1, count do
         local marker = questMarkers[index]
@@ -527,7 +532,7 @@ local function compactQuestLayout(count, left, right, bottom, top)
         local upperBottom = math.max(bottom, 58)
         bandBottom, bandTop = upperBottom < top and upperBottom or bottom, top
     end
-    local availableWidth = math.min(right - left, 440)
+    local availableWidth = math.min(right - left, 440 / math.max(1, scaleRatio))
     local availableHeight = bandTop - bandBottom
     local cellWidth, cellHeight = widest + questLabelGap, tallest + questLabelGap
     local scale, columns = 0, 1
@@ -577,9 +582,12 @@ local function renderQuests(heading)
         end
         return
     end
+    local scale = hudScale()
     local horizontalMargin, verticalMargin = math.min(8, screenWidth / 4), math.min(8, screenHeight / 4)
-    local left, right = horizontalMargin - centerX, screenWidth - centerX - horizontalMargin
-    local bottom, top = verticalMargin - centerY, screenHeight - centerY - verticalMargin
+    local left = horizontalMargin / scale - centerX
+    local right = (screenWidth - horizontalMargin) / scale - centerX
+    local bottom = verticalMargin / scale - centerY
+    local top = (screenHeight - verticalMargin) / scale - centerY
     layoutChanged = layoutChanged or left ~= lastQuestLeft or right ~= lastQuestRight
         or bottom ~= lastQuestBottom or top ~= lastQuestTop
     lastQuestLeft, lastQuestRight = left, right
@@ -625,7 +633,7 @@ local function renderQuests(heading)
             placeQuestMarker(marker, marker.bearingX, marker.normalY, marker.normalAnchor, 1)
         end
     else
-        compactQuestLayout(count, left, right, bottom, top)
+        compactQuestLayout(count, left, right, bottom, top, scale)
     end
 end
 
@@ -659,14 +667,25 @@ local function refresh()
 end
 
 local moving, moveMode
+local lockButton = CreateFrame("Button", "CompassForeverLockButton", UIParent, "UIPanelButtonTemplate")
+lockButton:SetSize(146, 24)
+lockButton:SetFrameStrata("DIALOG")
+lockButton:SetClampedToScreen(true)
+lockButton:SetText("Lock CompassForever")
+lockButton:Hide()
+
 local function place()
+    -- The saved offsets are in UIParent units, while the HUD anchors in its own units.
+    local scale = hudScale()
     frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", settings.x, settings.y)
+    frame:SetPoint("CENTER", UIParent, "CENTER", settings.x / scale, settings.y / scale)
+    lockButton:ClearAllPoints()
+    lockButton:SetPoint("BOTTOM", frame, "CENTER", 0, 57 * scale + 8)
 end
 
 local moveGuide = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 moveGuide:SetPoint("BOTTOM", frame, "CENTER", 0, 48)
-moveGuide:SetText("Drag to Move  |  /fcompass move to Lock")
+moveGuide:SetText("Drag to Move")
 moveGuide:Hide()
 
 local testLabel = frame:CreateFontString("ForeverCompassTestLabel", "OVERLAY", "GameFontNormal")
@@ -722,9 +741,14 @@ local function stopDrag()
     local x, y = frame:GetCenter()
     local centerX, centerY = UIParent:GetCenter()
     if finite(x) and finite(y) and finite(centerX) and finite(centerY) then
-        settings.x, settings.y = x - centerX, y - centerY
+        local scale = hudScale()
+        settings.x, settings.y = x * scale - centerX, y * scale - centerY
     end
     place()
+end
+
+local function applyOpacity()
+    frame:SetAlpha(moveMode and settings.opacity == 0 and 1 or settings.opacity)
 end
 
 local function setMoveMode(enabled)
@@ -732,6 +756,8 @@ local function setMoveMode(enabled)
     moveMode = enabled
     frame:EnableMouse(enabled)
     moveGuide:SetShown(enabled and not testTargets)
+    lockButton:SetShown(enabled)
+    applyOpacity()
 end
 
 local function updateVisibility()
@@ -791,7 +817,15 @@ frame:SetScript("OnDragStart", function()
     end
 end)
 frame:SetScript("OnDragStop", stopDrag)
-frame:SetScript("OnHide", stopDrag)
+frame:SetScript("OnHide", function()
+    if moveMode then
+        setMoveMode(false)
+    end
+end)
+lockButton:SetScript("OnClick", function()
+    setMoveMode(false)
+    refreshSettingsUI()
+end)
 
 local function startOrStopMove()
     if not settings.enabled and not testTargets then
@@ -809,6 +843,11 @@ local function resetPosition()
     refreshSettingsUI()
 end
 
+local function normalizeScale(value)
+    local percent = math.max(minScale, math.min(maxScale, value * 100))
+    return math.floor(percent / scaleStep + 0.5) * scaleStep / 100
+end
+
 local switches = { enabled = true, showQuests = true, showWaypoint = true, showCardinals = true, showMinimap = true }
 local function setPreference(key, value)
     if switches[key] then
@@ -824,6 +863,11 @@ local function setPreference(key, value)
             return
         end
         value = math.max(0, math.min(1, value))
+    elseif key == "scale" then
+        if not finite(value) then
+            return
+        end
+        value = normalizeScale(value)
     else
         return
     end
@@ -833,9 +877,19 @@ local function setPreference(key, value)
     end
     settings[key] = value
     if key == "enabled" then
+        if not value then
+            setMoveMode(false)
+        end
         updateVisibility()
     elseif key == "opacity" then
-        frame:SetAlpha(value)
+        applyOpacity()
+    elseif key == "scale" then
+        stopDrag()
+        frame:SetScale(value)
+        place()
+        if settings.enabled or testTargets then
+            render()
+        end
     elseif key ~= "showMinimap" then
         if key == "showCardinals" then
             previousHeading = false
@@ -899,10 +953,12 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
             settings.style = styles[1].id
         end
         settings.opacity = finite(settings.opacity) and math.max(0, math.min(1, settings.opacity)) or 1
+        settings.scale = finite(settings.scale) and normalizeScale(settings.scale) or 1
         settings.x = finite(settings.x) and settings.x or 0
         settings.y = finite(settings.y) and settings.y or 88
         applyStyle()
         frame:SetAlpha(settings.opacity)
+        frame:SetScale(settings.scale)
         place()
         updateVisibility()
         if ns and ns.CreateSettingsUI then
@@ -910,6 +966,9 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
                 get = function() return settings end,
                 set = setPreference,
                 styles = styles,
+                minScale = minScale,
+                maxScale = maxScale,
+                scaleStep = scaleStep,
                 styleY = styleY,
                 styleSegmentShown = styleSegmentShown,
                 move = startOrStopMove,

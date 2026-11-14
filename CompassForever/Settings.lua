@@ -43,14 +43,15 @@ end
 
 local function makePreview(parent)
     local preview = CreateFrame("Frame", nil, parent)
-    preview:SetSize(412, 92)
+    preview:SetSize(412, 98)
     preview:SetPoint("TOPLEFT", 18, -49)
     rectangle(preview, "BACKGROUND", previewDark)
     local title = label(preview, "GameFontHighlightSmall", "Live Preview", 11, -9)
     title:SetTextColor(textMuted[1], textMuted[2], textMuted[3])
 
     local artwork = CreateFrame("Frame", nil, preview)
-    artwork:SetAllPoints()
+    artwork:SetSize(1, 1)
+    artwork:SetPoint("CENTER")
     local sample = { artwork = artwork, arc = {}, ticks = {}, details = {}, heading = {} }
     for index = 1, 40 do
         sample.arc[index] = line(artwork, 0, 0, 0, 0)
@@ -138,7 +139,7 @@ end
 
 local function makePanel(api)
     local panel = CreateFrame("Frame", panelName, UIParent)
-    panel:SetSize(448, 423)
+    panel:SetSize(448, 456)
     panel:SetPoint("CENTER")
     panel:SetFrameStrata("DIALOG")
     panel:SetClampedToScreen(true)
@@ -251,6 +252,30 @@ local function makePanel(api)
     controls.resetPosition = button(panel, "Reset HUD Position", 134, 296, -374, function()
         api.resetPosition()
     end)
+
+    label(panel, "GameFontNormal", "HUD Size", 18, -406)
+    controls.sizeValue = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    controls.sizeValue:SetPoint("TOPRIGHT", -18, -406)
+
+    local slider = CreateFrame("Slider", nil, panel)
+    slider:SetPoint("TOPLEFT", 18, -427)
+    slider:SetSize(412, 18)
+    slider:SetOrientation("HORIZONTAL")
+    slider:EnableMouse(true)
+    slider:SetMinMaxValues(api.minScale, api.maxScale)
+    slider:SetValueStep(api.scaleStep)
+    slider:SetObeyStepOnDrag(true)
+    slider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+    slider:GetThumbTexture():SetSize(24, 24)
+    local track = slider:CreateTexture(nil, "BACKGROUND")
+    track:SetPoint("LEFT", 6, 0)
+    track:SetPoint("RIGHT", -6, 0)
+    track:SetHeight(4)
+    track:SetColorTexture(panelBorder[1], panelBorder[2], panelBorder[3], 1)
+    slider:SetScript("OnValueChanged", function(_, percent)
+        api.set("scale", percent / 100)
+    end)
+    controls.size = slider
     return panel
 end
 
@@ -277,6 +302,12 @@ local function refreshPanel(panel, api)
     controls.transparencyValue:SetText(("%d%%"):format(transparency))
     controls.test:SetText(api.testActive() and "Stop Overflow Test" or "Test Overflow")
 
+    local percent = math.floor(options.scale * 100 + 0.5)
+    controls.sizeValue:SetText(("%d%%"):format(percent))
+    if controls.size:GetValue() ~= percent then
+        controls.size:SetValue(percent)
+    end
+    preview.artwork:SetScale(options.scale)
     preview.artwork:SetAlpha(options.opacity)
     for _, heading in ipairs(preview.heading) do
         heading:SetShown(options.showCardinals)

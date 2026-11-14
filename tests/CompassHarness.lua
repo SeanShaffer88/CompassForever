@@ -30,8 +30,21 @@ function methods:GetHeight() return self.height or 0 end
 function methods:SetPoint(...) self.point = { ... } end
 function methods:ClearAllPoints() self.point = nil end
 function methods:GetPoint() return unpack(self.point or {}) end
-function methods:GetCenter() return self.centerX or 640, self.centerY or 360 end
-function methods:GetEffectiveScale() return self.scale or 1 end
+function methods:GetCenter()
+    if self.centerX or self.centerY then
+        return self.centerX or 640, self.centerY or 360
+    end
+    local point = self.point
+    if point and point[1] == "CENTER" and point[2] == UIParent and point[3] == "CENTER" then
+        local x, y = UIParent:GetCenter()
+        local scale = UIParent:GetEffectiveScale() / self:GetEffectiveScale()
+        return x * scale + point[4], y * scale + point[5]
+    end
+    return 640, 360
+end
+function methods:GetEffectiveScale()
+    return (self.scale or 1) * (self.parent and self.parent:GetEffectiveScale() or 1)
+end
 function methods:SetText(text) self.text = text end
 function methods:GetText() return self.text end
 function methods:SetStartPoint(...) self.start = { ... } end
@@ -55,9 +68,23 @@ for _, method in ipairs({
     "SetVertexColor", "SetShadowColor", "SetShadowOffset", "SetDrawLayer",
     "SetJustifyH", "SetJustifyV", "SetFont", "SetFontObject", "SetFontHeight", "SetAtlas",
     "SetBlendMode", "SetClipsChildren", "SetHitRectInsets", "SetFormattedText",
+    "SetOrientation", "SetObeyStepOnDrag",
 }) do
     methods[method] = function() end
 end
+function methods:SetMinMaxValues(minimum, maximum) self.minimum, self.maximum = minimum, maximum end
+function methods:SetValueStep(step) self.step = step end
+function methods:GetValue() return self.value or 0 end
+function methods:SetValue(value)
+    if value == self.value then return end
+    self.value = value
+    if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, value) end
+end
+function methods:SetThumbTexture(texture)
+    self.thumb = self:CreateTexture()
+    self.thumb:SetTexture(texture)
+end
+function methods:GetThumbTexture() return self.thumb end
 function methods:StartMoving() self.moving = true end
 function methods:StopMovingOrSizing() self.moving = false end
 function methods:SetColorTexture(...) self.color = { ... } end
@@ -467,12 +494,14 @@ for slot = 1, #watched do
 end
 
 local function checkViewport(count)
+    local scale = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    local x, y = frame:GetCenter()
     for slot = 1, count do
         local quest = questMarker(slot)
         assert(quest:IsVisible(), "All dense quest labels remain visible")
         local l, r, b, t = labelBounds(quest)
-        assert(l + frame.centerX >= -0.01 and r + frame.centerX <= UIParent:GetWidth() + 0.01
-            and b + frame.centerY >= -0.01 and t + frame.centerY <= UIParent:GetHeight() + 0.01,
+        assert((l + x) * scale >= -0.01 and (r + x) * scale <= UIParent:GetWidth() + 0.01
+            and (b + y) * scale >= -0.01 and (t + y) * scale <= UIParent:GetHeight() + 0.01,
             "Objective label " .. slot .. " is within both viewport dimensions")
         local leader = quest.lines[1]
         if leader:IsVisible() then
@@ -809,4 +838,63 @@ controls.showMinimap:SetChecked(true)
 click(controls.showMinimap)
 assert(minimapButton:IsVisible())
 
-print("CompassForever mocks passed: tracking, crowded labels, bundled minimap icon, and 12 distinct live styles")
+local size = assert(controls.size)
+local lockButton = assert(CompassForeverLockButton)
+assert(ForeverCompassDB.scale == 1 and controls.sizeValue:GetText() == "100%"
+    and size.minimum == 60 and size.maximum == 150 and size.step == 5,
+    "Existing settings default to the original HUD size")
+assert(not lockButton:IsVisible(), "Lock button appears only while moving")
+UIParent:SetSize(1280, 720)
+UIParent.centerX, UIParent.centerY = 640, 360
+UIParent:SetScale(0.8)
+frame.centerX, frame.centerY = nil, nil
+
+size:SetValue(150)
+assert(ForeverCompassDB.scale == 1.5 and frame.scale == 1.5 and panel.preview.artwork.scale == 1.5
+    and controls.sizeValue:GetText() == "150%", "Slider updates the fully scaled HUD and preview")
+local x, y = frame:GetCenter()
+assert(math.abs(x * 1.5 - 640) < 0.01 and math.abs(y * 1.5 - 448) < 0.01,
+    "Changing HUD size preserves the saved screen position")
+
+for index = 1, 20 do click(controls.transparencyUp) end
+click(controls.move)
+assert(not panel:IsVisible() and lockButton:IsVisible() and lockButton.parent == UIParent
+    and lockButton:GetText() == "Lock CompassForever" and frame.mouseEnabled,
+    "Move HUD opens the independent Lock CompassForever button")
+assert(frame.alpha == 1 and ForeverCompassDB.opacity == 0, "The transparent HUD is visible for placement")
+frame.scripts.OnDragStart()
+frame.centerX, frame.centerY = 750 / 1.5, 285 / 1.5
+click(lockButton)
+assert(not frame.moving and not frame.mouseEnabled and not lockButton:IsVisible(),
+    "The lock button completes an active drag and returns the HUD to click-through")
+assert(math.abs(ForeverCompassDB.x - 110) < 0.01 and math.abs(ForeverCompassDB.y + 75) < 0.01,
+    "Dragging at non-default scale saves UIParent offsets")
+assert(frame.alpha == 0 and ForeverCompassDB.opacity == 0, "Lock restores saved transparency")
+
+click(minimapButton, "RightButton")
+assert(panel:IsVisible(), "Settings reopen after locking a fully transparent HUD")
+for index = 1, 20 do click(controls.transparencyDown) end
+frame.centerX, frame.centerY = nil, nil
+for _, percent in ipairs({ 60, 150 }) do
+    size:SetValue(percent)
+    assert(ForeverCompassDB.scale == percent / 100 and controls.sizeValue:GetText() == percent .. "%")
+    for _, count in ipairs({ 64, 128 }) do
+        slash("test " .. count)
+        checkViewport(count)
+        for slot = 1, count do
+            questText(slot, "! " .. (slot * 10) .. " yd")
+        end
+    end
+end
+slash("test off")
+
+click(controls.move)
+slash("reset")
+assert(not lockButton:IsVisible() and not frame.mouseEnabled and ForeverCompassDB.scale == 1.5,
+    "Reset locks the HUD while retaining size")
+slash("move")
+slash("toggle")
+assert(not lockButton:IsVisible() and not frame.mouseEnabled and not frame:IsVisible(),
+    "Hiding the HUD exits move mode")
+
+print("CompassForever mocks passed: tracking, crowded labels, live styles and sizing, and move/lock controls")

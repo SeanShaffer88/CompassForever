@@ -13,6 +13,8 @@ If upgrading from a version installed in a folder named `ForeverCompass`, exit W
 
 Left-click the minimap button to show or hide the HUD. Right-click it or run `/fcompass settings` to open the settings window. Drag its title bar to move the window. Choose from 12 styles to change the compass shape and its colors. The HUD and settings preview update immediately. HUD Transparency ranges from 0% (opaque) to 100% (invisible). The panel also controls quest distances, the manual map pin, cardinal letters, and the minimap button. Use the slash command to reopen settings if you hide the button.
 
+Use **HUD Size** to scale the compass from 60% to 150%. Click **Move HUD**, drag the compass, then click **Lock CompassForever** to save its position.
+
 - `/fcompass` shows or hides the compass.
 - `/fcompass move` unlocks the compass. Drag it into place and repeat the command to lock it.
 - `/fcompass reset` restores the default position and locks it.
