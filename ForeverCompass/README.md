@@ -2,7 +2,7 @@
 
 Forever Compass adds a curved compass to World of Warcraft: Forever (Interface 16001). The cardinal marks follow your character's facing.
 
-- Watch a quest in the quest log to see every available objective location for that quest. Each gold marker shows its own bearing and straight-line distance in yards. When rows fill up, distance labels move into on-screen columns. Thin gold lines connect shifted labels to their bearings.
+- Watch a quest in the quest log to see every available objective location for that quest. Each gold marker shows its own bearing and straight-line distance in yards. When rows fill up, distances move into a compact block centered under the compass. The block shifts to stay visible if you drag the compass near a screen edge, and uses another visible area when there is no room below. Thin gold lines connect shifted labels to their bearings.
 - A gold `!` marks a quest objective location. A gold `~` marks the next route waypoint when the game supplies one instead of a usable objective location.
 - Ctrl+left-click a supported location on the World Map to place a pin. A purple diamond shows its own bearing and distance. For both marker types, an edge chevron points toward a bearing beyond the visible arc.
 

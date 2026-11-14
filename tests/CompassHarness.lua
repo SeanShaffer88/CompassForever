@@ -606,4 +606,47 @@ assert(not frame:IsVisible() and not testLabel:IsShown() and ForeverCompassDB.en
 slash("toggle")
 questText(1, "! 300 yd")
 
-print("ForeverCompass mock passed: live quests and pins, crowded labels, and session-only test mode")
+local function checkCenteredOverflow(count, center, requireBelow)
+    checkViewport(count)
+    local rows = {}
+    for slot = 1, count do
+        questText(slot, "! " .. (slot * 10) .. " yd")
+        local quest = questMarker(slot)
+        local left, right, _, top = labelBounds(quest)
+        assert(left >= center - 220.01 and right <= center + 220.01,
+            "Overflow stays within the 440-unit centered block")
+        if requireBelow then
+            assert(top <= -75.99, "Overflow text stays below the compass")
+        end
+        local y = quest.point[5]
+        local row = rows[y] or { left = left, right = right }
+        row.left, row.right = math.min(row.left, left), math.max(row.right, right)
+        rows[y] = row
+    end
+    for _, row in pairs(rows) do
+        assert(math.abs((row.left + row.right) / 2 - center) <= 4,
+            "Each row, including the last, is centered")
+    end
+end
+
+UIParent:SetSize(1920, 1080)
+UIParent.centerX, UIParent.centerY = 960, 540
+frame.centerX, frame.centerY = 960, 627
+slash("test")
+checkCenteredOverflow(64, 0, true)
+slash("test 128")
+checkCenteredOverflow(128, 0, true)
+assert(questMarker(128).labels[1].textScale == 1, "Normal desktop viewport preserves full-size distance text")
+
+UIParent:SetSize(640, 360)
+UIParent.centerX, UIParent.centerY = 320, 180
+frame.centerX, frame.centerY = 100, 140
+advance()
+checkCenteredOverflow(128, 128, true)
+frame.centerY = 40
+advance()
+checkCenteredOverflow(128, 128, false)
+slash("test off")
+questText(1, "! 300 yd")
+
+print("ForeverCompass mock passed: live quests and pins, centered 64/128 label overflow, viewport edges, and session-only test mode")
