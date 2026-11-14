@@ -51,7 +51,7 @@ end
 for _, method in ipairs({
     "SetAllPoints", "SetFrameLevel", "SetFrameStrata", "SetClampedToScreen", "SetMovable",
     "SetUserPlaced", "RegisterForDrag",
-    "SetThickness", "SetRotation", "SetTexture",
+    "SetThickness", "SetRotation",
     "SetVertexColor", "SetShadowColor", "SetShadowOffset", "SetDrawLayer",
     "SetJustifyH", "SetJustifyV", "SetFont", "SetFontObject", "SetFontHeight", "SetAtlas",
     "SetBlendMode", "SetClipsChildren", "SetHitRectInsets", "SetFormattedText",
@@ -61,6 +61,7 @@ end
 function methods:StartMoving() self.moving = true end
 function methods:StopMovingOrSizing() self.moving = false end
 function methods:SetColorTexture(...) self.color = { ... } end
+function methods:SetTexture(texture) self.texture = texture end
 function methods:SetTextColor(...) self.color = { ... } end
 function methods:SetAlpha(alpha) self.alpha = alpha end
 function methods:SetChecked(checked) self.checked = checked end
@@ -134,6 +135,7 @@ C_Map = {
 playerSamples = 0
 facing = 0
 local namespace = {}
+assert(loadfile(addonPath .. "/Styles.lua"))("CompassForever", namespace)
 assert(loadfile(addonPath .. "/Settings.lua"))("CompassForever", namespace)
 assert(loadfile(addonPath .. "/CompassForever.lua"))("CompassForever", namespace)
 local frame = assert(ForeverCompassFrame)
@@ -684,9 +686,18 @@ local function click(control, button)
     handler(control, button or "LeftButton")
 end
 
-assert(ForeverCompassDB.theme == "classic" and ForeverCompassDB.style == "arc"
+assert(ForeverCompassDB.theme == nil and ForeverCompassDB.style == "arc"
     and ForeverCompassDB.opacity == 1, "Old settings are normalized with Classic defaults")
 local minimapButton = assert(CompassForeverMinimapButton)
+local icon = assert(minimapButton.icon)
+assert(icon:IsShown() and icon:GetWidth() == 28 and icon:GetHeight() == 28
+    and icon.texture == "Interface\\AddOns\\CompassForever\\Media\\MinimapCompass.tga",
+    "Minimap button displays the bundled compass artwork")
+local iconFile = assert(io.open(addonPath .. "/Media/MinimapCompass.tga", "rb"))
+local pixels = iconFile:read("*a")
+iconFile:close()
+assert(#pixels == 4114 and pixels:byte(3) == 2 and pixels:byte(13) == 32
+    and pixels:byte(15) == 32 and pixels:byte(17) == 32, "Bundled TGA is 32 by 32 RGBA")
 assert(minimapButton.parent == Minimap and minimapButton:IsVisible(), "Minimap button is independent of the HUD")
 click(minimapButton)
 assert(not frame:IsVisible() and minimapButton:IsVisible(), "Left click hides only the HUD")
@@ -701,15 +712,34 @@ assert(panel.moving, "Title-bar drag starts panel movement")
 panel.dragHandle.scripts.OnDragStop(panel.dragHandle)
 assert(not panel.moving, "Title-bar drag stops movement")
 
-local function colorChanged(before, after)
-    return before[1] ~= after[1] or before[2] ~= after[2] or before[3] ~= after[3]
+assert(controls.themes == nil and controls.themeMarks == nil, "Theme options are absent")
+local function shapeSignature(...)
+    local parts = {}
+    for group = 1, select("#", ...) do
+        for _, region in ipairs(select(group, ...)) do
+            if region:IsShown() then
+                local a, b = region.start, region.finish
+                assert(a and b, "Visible geometry has both endpoints")
+                parts[#parts + 1] = table.concat({a[3], a[4], b[3], b[4]}, ",")
+            end
+        end
+    end
+    return table.concat(parts, ";")
 end
-local arcBefore = assert(frame.lines[20].color)
-local previewBefore = assert(panel.preview.heading[1].color)
-click(controls.themes.frost)
-assert(ForeverCompassDB.theme == "frost")
-assert(colorChanged(arcBefore, frame.lines[20].color), "Theme applies to live HUD")
-assert(colorChanged(previewBefore, panel.preview.heading[1].color), "Theme applies to preview while HUD is hidden")
+local expectedStyles = { "arc", "bar", "tactical", "flight", "hero", "radical", "fantasy", "blocky",
+    "horizon", "ribbon", "chevron", "minimal" }
+local hudShapes, previewShapes, styleCount = {}, {}, 0
+for _ in pairs(controls.styles) do styleCount = styleCount + 1 end
+assert(styleCount == #expectedStyles and #namespace.CompassStyles == #expectedStyles, "Exactly 12 styles")
+for _, id in ipairs(expectedStyles) do
+    click(assert(controls.styles[id]))
+    assert(ForeverCompassDB.style == id, "Style selection persists")
+    local hud = shapeSignature(frame.lines, CompassForeverStyleDetails.lines)
+    local preview = shapeSignature(panel.preview.arc, panel.preview.details)
+    assert(not hudShapes[hud] and not previewShapes[preview], "Each style has distinct geometry in both renderers: " .. id)
+    hudShapes[hud], previewShapes[preview] = true, true
+end
+click(controls.styles.arc)
 
 local previewArcY = panel.preview.arc[1].start[4]
 click(controls.styles.bar)
@@ -723,9 +753,19 @@ assert(not frame.lines[20]:IsShown() and CompassForeverStyleDetails.lines[1]:IsS
     "Flight breaks the center line for its chevron")
 click(controls.styles.arc)
 assert(frame.lines[1].start[4] < frame.lines[20].finish[4], "Arc style restores curvature")
-click(controls.opacityDown)
-assert(ForeverCompassDB.opacity < 1 and frame.alpha == ForeverCompassDB.opacity, "Opacity applies to HUD")
-click(controls.opacityUp)
+assert(controls.transparencyValue:GetText() == "0%", "Default HUD is opaque")
+for index = 1, 21 do click(controls.transparencyUp) end
+assert(ForeverCompassDB.opacity == 0 and controls.transparencyValue:GetText() == "100%",
+    "Transparency is bounded at 100%")
+assert(frame.alpha == 0 and panel.preview.artwork.alpha == 0 and panel:IsVisible()
+    and minimapButton:IsVisible(), "Only HUD and preview art fade at full transparency")
+click(controls.transparencyDown)
+assert(ForeverCompassDB.opacity == 0.05 and controls.transparencyValue:GetText() == "95%"
+    and frame.alpha == 0.05 and panel.preview.artwork.alpha == 0.05,
+    "Decreasing transparency restores both displays")
+for index = 1, 20 do click(controls.transparencyDown) end
+assert(ForeverCompassDB.opacity == 1 and frame.alpha == 1 and panel.preview.artwork.alpha == 1,
+    "Transparency is bounded at 0%")
 
 click(minimapButton)
 assert(frame:IsVisible() and panel:IsVisible(), "Visibility control leaves settings available")
@@ -769,4 +809,4 @@ controls.showMinimap:SetChecked(true)
 click(controls.showMinimap)
 assert(minimapButton:IsVisible())
 
-print("CompassForever mocks passed: tracking, crowded labels, settings, live themes, styles, and minimap controls")
+print("CompassForever mocks passed: tracking, crowded labels, bundled minimap icon, and 12 distinct live styles")

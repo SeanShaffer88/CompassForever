@@ -20,5 +20,6 @@ jobs:
       - name: Check syntax and mock the Forever APIs
         run: |
           grep -Fxq '## Interface: 16001' CompassForever/CompassForever.toc
-          luac5.1 -p CompassForever/Settings.lua CompassForever/CompassForever.lua tests/CompassHarness.lua
+          test -s CompassForever/Media/MinimapCompass.tga
+          luac5.1 -p CompassForever/Styles.lua CompassForever/Settings.lua CompassForever/CompassForever.lua tests/CompassHarness.lua
           lua5.1 tests/CompassHarness.lua CompassForever

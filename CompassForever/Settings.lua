@@ -1,11 +1,14 @@
-local _, namespace = ...
+local addonName, namespace = ...
 
 local panelName = "CompassForeverSettings"
 local previewDark = { 0.055, 0.063, 0.066 }
 local panelDark = { 0.102, 0.112, 0.115 }
 local panelBorder = { 0.40, 0.34, 0.23 }
 local textMuted = { 0.74, 0.77, 0.76 }
-local gold = { 0.95, 0.77, 0.40 }
+local previewHalfWidth = 115
+local previewBaseline = 6
+local previewScale = previewHalfWidth / 280
+local iconPath = "Interface\\AddOns\\" .. addonName .. "\\Media\\MinimapCompass.tga"
 
 local function rectangle(parent, layer, color)
     local texture = parent:CreateTexture(nil, layer)
@@ -49,11 +52,8 @@ local function makePreview(parent)
     local artwork = CreateFrame("Frame", nil, preview)
     artwork:SetAllPoints()
     local sample = { artwork = artwork, arc = {}, ticks = {}, details = {}, heading = {} }
-    for index = 1, 16 do
+    for index = 1, 40 do
         sample.arc[index] = line(artwork, 0, 0, 0, 0)
-    end
-    for index = 1, 4 do
-        sample.details[index] = line(artwork, 0, 0, 0, 0)
     end
     for index = -4, 4 do
         local isMajor = index % 4 == 0
@@ -82,52 +82,57 @@ end
 
 local function positionPreview(sample, style, api)
     local art = sample.artwork
+    local r, g, b = unpack(style.arc)
     local function yAt(x)
-        return 6 + api.styleY(style.id, x / 115) * (115 / 280)
+        return previewBaseline + api.styleY(style.id, x / previewHalfWidth) * previewScale
     end
     local function place(stroke, x1, y1, x2, y2)
         stroke:SetStartPoint("CENTER", art, x1, y1)
         stroke:SetEndPoint("CENTER", art, x2, y2)
     end
     for index, stroke in ipairs(sample.arc) do
-        local x1 = -115 + (index - 1) * 230 / #sample.arc
-        local x2 = x1 + 230 / #sample.arc
+        local x1 = -previewHalfWidth + (index - 1) * 2 * previewHalfWidth / #sample.arc
+        local x2 = x1 + 2 * previewHalfWidth / #sample.arc
         place(stroke, x1, yAt(x1), x2, yAt(x2))
+        stroke:SetThickness(math.max(1, style.width * previewScale))
+        stroke:SetColorTexture(r, g, b, 1)
+        stroke:SetShown(api.styleSegmentShown(style.id, index, #sample.arc))
     end
     for _, tick in ipairs(sample.ticks) do
         local x = tick.x
         local y = yAt(x)
-        place(tick.stroke, x, y - 3, x, y + (tick.label and 5 or 2))
+        local length = (tick.label and 9 or 5) * previewScale
+        if style.tickBelow then
+            place(tick.stroke, x, y - length * 2, x, y)
+        else
+            place(tick.stroke, x, y - length, x, y + length)
+        end
+        tick.stroke:SetShown(tick.label ~= nil or style.minorTicks ~= false)
+        tick.stroke:SetThickness(math.max(1, (style.tickWidth or (tick.label and 2 or 1.2)) * previewScale))
+        tick.stroke:SetColorTexture(r, g, b, tick.label and 1 or 0.75)
         if tick.label then
             tick.label:ClearAllPoints()
-            tick.label:SetPoint("BOTTOM", art, "CENTER", x, y + 8)
+            tick.label:SetPoint("BOTTOM", art, "CENTER", x, y + (style.labelInset or 12) * previewScale)
+            tick.label:SetTextColor(r, g, b)
         end
     end
     local details = sample.details
-    for _, stroke in ipairs(details) do
-        stroke:Hide()
+    local detailSegments = style.details or {}
+    for index, segment in ipairs(detailSegments) do
+        local stroke = details[index]
+        if not stroke then
+            stroke = line(art, 0, 0, 0, 0)
+            details[index] = stroke
+        end
+        local x1, y1, x2, y2, width, alpha = unpack(segment)
+        place(stroke, x1 * previewScale, previewBaseline + y1 * previewScale,
+            x2 * previewScale, previewBaseline + y2 * previewScale)
+        stroke:SetThickness(math.max(1, (width or 1) * previewScale))
+        stroke:SetColorTexture(r, g, b, alpha or 0.45)
+        stroke:Show()
     end
-    if style.id == "bar" then
-        place(details[1], -115, 12, 115, 12)
-        place(details[2], -115, 0, 115, 0)
-        place(details[3], -115, 0, -115, 12)
-        place(details[4], 115, 0, 115, 12)
-        for _, stroke in ipairs(details) do
-            stroke:Show()
-        end
-    elseif style.id == "tactical" then
-        place(details[1], -3, 10, 0, 7)
-        place(details[2], 0, 7, 3, 10)
-        details[1]:Show()
-        details[2]:Show()
-    elseif style.id == "flight" then
-        place(details[1], -6, 6, 0, 11)
-        place(details[2], 0, 11, 6, 6)
-        place(details[3], -115, 2, -106, 2)
-        place(details[4], 106, 2, 115, 2)
-        for _, stroke in ipairs(details) do
-            stroke:Show()
-        end
+    for index = #detailSegments + 1, #details do
+        details[index]:Hide()
     end
 end
 
@@ -179,29 +184,15 @@ local function makePanel(api)
         table.insert(UISpecialFrames, panelName)
     end
 
-    local controls = { close = close, themes = {}, themeMarks = {}, styles = {}, styleMarks = {} }
+    local controls = { close = close, styles = {}, styleMarks = {} }
     panel.controls = controls
     panel.preview = makePreview(panel)
 
-    label(panel, "GameFontNormal", "HUD Theme", 18, -152)
-    for index, theme in ipairs(api.themes) do
-        local themeId = theme.id
-        local choice = button(panel, theme.name, 99, 18 + (index - 1) * 104, -173, function()
-            api.set("theme", themeId)
-        end)
-        controls.themes[themeId] = choice
-        local mark = choice:CreateTexture(nil, "OVERLAY")
-        mark:SetPoint("BOTTOMLEFT", 6, 3)
-        mark:SetPoint("BOTTOMRIGHT", -6, 3)
-        mark:SetHeight(2)
-        mark:SetColorTexture(theme.arc[1], theme.arc[2], theme.arc[3], 1)
-        controls.themeMarks[themeId] = mark
-    end
-
-    label(panel, "GameFontNormal", "HUD Style", 18, -209)
+    label(panel, "GameFontNormal", "HUD Style", 18, -152)
     for index, style in ipairs(api.styles) do
         local styleId = style.id
-        local choice = button(panel, style.name, 99, 18 + (index - 1) * 104, -230, function()
+        local column, row = (index - 1) % 4, math.floor((index - 1) / 4)
+        local choice = button(panel, style.name, 99, 18 + column * 104, -173 - row * 28, function()
             api.set("style", styleId)
         end)
         controls.styles[styleId] = choice
@@ -209,7 +200,7 @@ local function makePanel(api)
         mark:SetPoint("BOTTOMLEFT", 6, 3)
         mark:SetPoint("BOTTOMRIGHT", -6, 3)
         mark:SetHeight(2)
-        mark:SetColorTexture(gold[1], gold[2], gold[3], 1)
+        mark:SetColorTexture(style.arc[1], style.arc[2], style.arc[3], 1)
         controls.styleMarks[styleId] = mark
     end
 
@@ -235,16 +226,16 @@ local function makePanel(api)
         controls[key] = check
     end
 
-    label(panel, "GameFontNormal", "HUD Opacity", 18, -354)
-    controls.opacityDown = button(panel, "-", 28, 18, -374, function()
-        api.set("opacity", math.max(0.35, api.get().opacity - 0.05))
-    end)
-    local opacity = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    opacity:SetPoint("CENTER", controls.opacityDown, "RIGHT", 27, 0)
-    controls.opacityUp = button(panel, "+", 28, 101, -374, function()
+    label(panel, "GameFontNormal", "HUD Transparency", 18, -354)
+    controls.transparencyDown = button(panel, "-", 28, 18, -374, function()
         api.set("opacity", math.min(1, api.get().opacity + 0.05))
     end)
-    controls.opacityValue = opacity
+    local transparency = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    transparency:SetPoint("CENTER", controls.transparencyDown, "RIGHT", 27, 0)
+    controls.transparencyUp = button(panel, "+", 28, 101, -374, function()
+        api.set("opacity", math.max(0, api.get().opacity - 0.05))
+    end)
+    controls.transparencyValue = transparency
 
     controls.test = button(panel, "Test Overflow", 151, 137, -374, function()
         if api.testActive() then
@@ -265,14 +256,6 @@ end
 
 local function refreshPanel(panel, api)
     local options, controls, preview = api.get(), panel.controls, panel.preview
-    local theme = api.themes[1]
-    for _, choice in ipairs(api.themes) do
-        local selected = choice.id == options.theme
-        controls.themeMarks[choice.id]:SetShown(selected)
-        if selected then
-            theme = choice
-        end
-    end
     local style = api.styles[1]
     for _, choice in ipairs(api.styles) do
         local selected = choice.id == options.style
@@ -290,42 +273,33 @@ local function refreshPanel(panel, api)
     controls.showQuests:SetChecked(options.showQuests)
     controls.showWaypoint:SetChecked(options.showWaypoint)
     controls.showCardinals:SetChecked(options.showCardinals)
-    controls.opacityValue:SetText(("%d%%"):format(math.floor(options.opacity * 100 + 0.5)))
+    local transparency = math.floor((1 - options.opacity) * 100 + 0.5)
+    controls.transparencyValue:SetText(("%d%%"):format(transparency))
     controls.test:SetText(api.testActive() and "Stop Overflow Test" or "Test Overflow")
 
     preview.artwork:SetAlpha(options.opacity)
-    for _, stroke in ipairs(preview.arc) do
-        stroke:SetColorTexture(theme.arc[1], theme.arc[2], theme.arc[3], 1)
-    end
-    for _, stroke in ipairs(preview.details) do
-        stroke:SetColorTexture(theme.arc[1], theme.arc[2], theme.arc[3], 0.55)
-    end
-    for _, tick in ipairs(preview.ticks) do
-        tick.stroke:SetColorTexture(theme.arc[1], theme.arc[2], theme.arc[3], 1)
-        if tick.label then
-            tick.label:SetShown(options.showCardinals)
-            tick.label:SetTextColor(theme.arc[1], theme.arc[2], theme.arc[3])
-        end
+    for _, heading in ipairs(preview.heading) do
+        heading:SetShown(options.showCardinals)
     end
     preview.quest:SetShown(options.showQuests)
-    preview.quest:SetTextColor(theme.quest[1], theme.quest[2], theme.quest[3])
+    preview.quest:SetTextColor(style.quest[1], style.quest[2], style.quest[3])
     preview.pin:SetShown(options.showWaypoint)
-    preview.pin:SetTextColor(theme.pin[1], theme.pin[2], theme.pin[3])
+    preview.pin:SetTextColor(style.pin[1], style.pin[2], style.pin[3])
     for _, stroke in ipairs(preview.pinIcon) do
         stroke:SetShown(options.showWaypoint)
-        stroke:SetColorTexture(theme.pin[1], theme.pin[2], theme.pin[3], 1)
+        stroke:SetColorTexture(style.pin[1], style.pin[2], style.pin[3], 1)
     end
 end
 
 function namespace.CreateSettingsUI(api)
     local ui = {}
-    local panel, minimapButton, ornament
+    local panel, minimapButton
 
     function ui:Refresh()
         if minimapButton then
             local options = api.get()
             minimapButton:SetShown(options.showMinimap)
-            ornament:SetAlpha(options.enabled and 1 or 0.55)
+            minimapButton.icon:SetAlpha(options.enabled and 1 or 0.65)
         end
         if panel then
             refreshPanel(panel, api)
@@ -353,25 +327,11 @@ function namespace.CreateSettingsUI(api)
         minimapButton:SetPoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", 6, 6)
         minimapButton:SetFrameLevel(Minimap:GetFrameLevel() + 5)
         minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        minimapButton:SetHighlightTexture(136477)
-        local background = minimapButton:CreateTexture(nil, "BACKGROUND")
-        background:SetSize(24, 24)
-        background:SetPoint("CENTER")
-        background:SetTexture(136467)
-        local ring = minimapButton:CreateTexture(nil, "OVERLAY")
-        ring:SetSize(50, 50)
-        ring:SetPoint("TOPLEFT")
-        ring:SetTexture(136430)
-        ornament = CreateFrame("Frame", nil, minimapButton)
-        ornament:SetAllPoints()
-        local north = ornament:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        north:SetPoint("CENTER", 0, 5)
-        north:SetText("N")
-        north:SetTextColor(gold[1], gold[2], gold[3])
-        local needle = { line(ornament, -4, -2, 0, -8), line(ornament, 0, -8, 4, -2) }
-        for _, stroke in ipairs(needle) do
-            stroke:SetColorTexture(gold[1], gold[2], gold[3], 1)
-        end
+        local icon = minimapButton:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(28, 28)
+        icon:SetPoint("CENTER")
+        icon:SetTexture(iconPath)
+        minimapButton.icon = icon
         minimapButton:SetScript("OnClick", function(_, mouseButton)
             if mouseButton == "RightButton" then
                 ui:Toggle()

@@ -11,7 +11,7 @@ CompassForever adds a curved compass to World of Warcraft: Forever (Interface 16
 
 If upgrading from a version installed in a folder named `ForeverCompass`, exit WoW and move that old addon folder out of `AddOns` before extracting the new one. To carry over your settings, back up the account's `WTF\Account\<account>\SavedVariables\ForeverCompass.lua` file and copy it to `CompassForever.lua` in the same directory if that file does not already exist.
 
-Left-click the minimap button to show or hide the HUD. Right-click it or run `/fcompass settings` to open the settings window. Drag its title bar to move the window. Choose Classic, Frost, Ember, or High Contrast for color. Arc, Framed, Tactical, and Flight change the HUD shape. Both choices update the live preview and the HUD immediately. The panel also controls opacity, quest distances, the manual map pin, cardinal letters, and the minimap button. Use the slash command to reopen settings if you hide the button.
+Left-click the minimap button to show or hide the HUD. Right-click it or run `/fcompass settings` to open the settings window. Drag its title bar to move the window. Choose from 12 styles to change the compass shape and its colors. The HUD and settings preview update immediately. HUD Transparency ranges from 0% (opaque) to 100% (invisible). The panel also controls quest distances, the manual map pin, cardinal letters, and the minimap button. Use the slash command to reopen settings if you hide the button.
 
 - `/fcompass` shows or hides the compass.
 - `/fcompass move` unlocks the compass. Drag it into place and repeat the command to lock it.

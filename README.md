@@ -4,3 +4,4 @@ CompassForever is a World of Warcraft: Forever addon that shows the bearing and 
 
 - [Download the installable ZIP from Releases](https://github.com/SeanShaffer88/CompassForever/releases)
 - [Installation and in-game controls](CompassForever/README.md)
+- [Preview the 12 HUD styles](CompassForever-Styles-Mockup.png)
