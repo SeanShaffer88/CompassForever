@@ -2,6 +2,6 @@
 ## Title: Forever Compass
 ## Notes: A curved compass with distances to watched quest objectives and your World Map pin.
 ## Author: Malikor
-## Version: 0.4.2
+## Version: 0.4.3
 ## SavedVariables: ForeverCompassDB
 ForeverCompass.lua
