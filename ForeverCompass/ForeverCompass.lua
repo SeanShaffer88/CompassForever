@@ -473,35 +473,33 @@ local function compactQuestLayout(count, left, right, bottom, top)
         tallest = math.max(tallest, marker.height)
     end
 
-    -- Two rectangular bands leave the compass, compass headings and map pin clear.
-    local lowerTop, upperBottom = math.min(top, -76), math.max(bottom, 58)
-    if lowerTop <= bottom and upperBottom >= top then
-        lowerTop = top
+    local bandBottom, bandTop = bottom, math.min(top, -76)
+    if bandTop - bandBottom < 1 then
+        local upperBottom = math.max(bottom, 58)
+        bandBottom, bandTop = upperBottom < top and upperBottom or bottom, top
     end
-    local scale = 1
-    local columnWidth, rowHeight, columns, lowerRows, upperRows
-    while true do
-        columnWidth = (widest + questLabelGap) * scale
-        rowHeight = (tallest + questLabelGap) * scale
-        columns = math.floor((right - left) / columnWidth)
-        lowerRows = math.max(0, math.floor((lowerTop - bottom) / rowHeight))
-        upperRows = math.max(0, math.floor((top - upperBottom) / rowHeight))
-        if columns * (lowerRows + upperRows) >= count then
-            break
+    local availableWidth = math.min(right - left, 440)
+    local availableHeight = bandTop - bandBottom
+    local cellWidth, cellHeight = widest + questLabelGap, tallest + questLabelGap
+    local scale, columns = 0, 1
+    for candidate = 1, count do
+        local rows = math.ceil(count / candidate)
+        local candidateScale = math.min(1, availableWidth / (candidate * cellWidth),
+            availableHeight / (rows * cellHeight))
+        if candidateScale > scale then
+            scale, columns = candidateScale, candidate
         end
-        scale = scale * 0.85
     end
 
-    local lowerCapacity = columns * lowerRows
+    local columnWidth, rowHeight = cellWidth * scale, cellHeight * scale
+    local halfBlockWidth = availableWidth / 2
+    local center = math.max(left + halfBlockWidth, math.min(0, right - halfBlockWidth))
     for index = 1, count do
-        local marker = questMarkers[index]
-        local lower = index <= lowerCapacity
-        local cell = lower and index - 1 or index - 1 - lowerCapacity
-        local row, column = math.floor(cell / columns), cell % columns
-        local x = left + (column + 0.5) * columnWidth
-        local y = lower and lowerTop - (row + 0.5) * rowHeight
-            or upperBottom + (row + 0.5) * rowHeight
-        placeQuestMarker(marker, x, y, "CENTER", scale)
+        local row, column = math.floor((index - 1) / columns), (index - 1) % columns
+        local rowColumns = math.min(columns, count - row * columns)
+        local x = center + (column + 0.5 - rowColumns / 2) * columnWidth
+        local y = bandTop - (row + 0.5) * rowHeight
+        placeQuestMarker(questMarkers[index], x, y, "CENTER", scale)
     end
 end
 
