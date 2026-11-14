@@ -1,0 +1,24 @@
+name: Addon Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lua:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lua5.1
+      - name: Check syntax and mock the Forever APIs
+        run: |
+          grep -Fxq '## Interface: 16001' ForeverCompass/ForeverCompass.toc
+          luac5.1 -p ForeverCompass/ForeverCompass.lua tests/CompassHarness.lua
+          lua5.1 tests/CompassHarness.lua ForeverCompass
