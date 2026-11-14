@@ -42,8 +42,9 @@ function methods:CreateLine()
     return line
 end
 function methods:CreateTexture() return region(self) end
-function methods:CreateFontString()
+function methods:CreateFontString(name)
     local label = region(self)
+    if name then _G[name] = label end
     self.labels[#self.labels + 1] = label
     return label
 end
@@ -542,4 +543,67 @@ advance()
 checkViewport(65)
 questText(65, "! 650 yd")
 
-print("ForeverCompass mock passed: watched-only objectives, dense on-screen labels, viewport changes, frame reuse, manual pin and routes")
+watched = { 210 }
+questPOIs[1] = { { questID = 210, inProgress = true, x = 0.3, y = 0 } }
+event("QUEST_POI_UPDATE")
+advance()
+questText(1, "! 300 yd")
+frame.centerX, frame.centerY = 340, 140
+UIParent:SetSize(640, 360)
+UIParent.centerX, UIParent.centerY = 320, 180
+
+local testLabel = assert(ForeverCompassTestLabel)
+assert(not testLabel:IsShown(), "Test mode starts off")
+slash("test")
+assert(testLabel:IsVisible(), "Test mode identified")
+checkViewport(64)
+questText(1, "! 10 yd")
+questText(64, "! 640 yd")
+assert(marker:IsVisible() and marker.labels[1].text == "300 yd", "Test mode preserves manual pin")
+local testColumns = false
+for slot = 1, 64 do
+    local leader = questMarker(slot).lines[1]
+    if leader:IsVisible() then
+        assert(math.abs(leader.start[3]) < 0.01, "Synthetic bearing starts at compass center")
+        testColumns = true
+    end
+end
+assert(testColumns, "Test mode reaches actual overflow columns")
+facing = math.rad(155)
+advance()
+questText(64, "! 640 yd")
+checkViewport(64)
+
+facing = nil
+advance()
+questText(64, "! 640 yd")
+checkViewport(64)
+
+slash("test 1")
+questText(1, "! 10 yd")
+assert(not questMarker(2):IsVisible(), "Explicit count replaces the synthetic batch")
+slash("test 128")
+questText(128, "! 1280 yd")
+checkViewport(128)
+for _, invalid in ipairs({ "test 0", "test 129", "test 1.5", "test 1e2", "test 64 extra" }) do
+    slash(invalid)
+    questText(128, "! 1280 yd")
+end
+
+facing = 0
+slash("test off")
+questText(1, "! 300 yd")
+assert(not questMarker(2):IsVisible() and not testLabel:IsShown(), "Exit immediately restores live objectives")
+slash("toggle")
+assert(not frame:IsVisible() and ForeverCompassDB.enabled == false)
+slash("test")
+assert(frame:IsVisible() and testLabel:IsVisible() and ForeverCompassDB.enabled == false,
+    "Hidden compass shows a session-only test override")
+questText(64, "! 640 yd")
+slash("test")
+assert(not frame:IsVisible() and not testLabel:IsShown() and ForeverCompassDB.enabled == false,
+    "Bare command restores hidden state")
+slash("toggle")
+questText(1, "! 300 yd")
+
+print("ForeverCompass mock passed: live quests and pins, crowded labels, and session-only test mode")

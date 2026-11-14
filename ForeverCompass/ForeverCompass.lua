@@ -239,6 +239,7 @@ local function getQuestMarker(index)
 end
 
 local watches, questTargets, nearbyTargets = {}, {}, {}
+local testTargets
 local questsDirty, lastPlayerMap, lastPlayerContinent = true
 
 local function readQuestWatches()
@@ -506,7 +507,8 @@ end
 
 local lastQuestCount, lastQuestLeft, lastQuestRight, lastQuestBottom, lastQuestTop
 local function renderQuests(heading)
-    local count = heading and #nearbyTargets or 0
+    local targets = testTargets or nearbyTargets
+    local count = (heading or testTargets) and #targets or 0
     for index = count + 1, math.min(lastQuestCount or 0, #questMarkers) do
         questMarkers[index].frame:Hide()
     end
@@ -535,9 +537,12 @@ local function renderQuests(heading)
     lastQuestLeft, lastQuestRight = left, right
     lastQuestBottom, lastQuestTop = bottom, top
 
-    for index, target in ipairs(nearbyTargets) do
+    for index, target in ipairs(targets) do
         local marker = getQuestMarker(index)
-        local offset, edge = markerOffset(heading, target.bearing, target.distance)
+        local offset, edge = 0, nil
+        if not testTargets then
+            offset, edge = markerOffset(heading, target.bearing, target.distance)
+        end
         local yards = math.floor(target.distance + 0.5)
         if offset ~= marker.offset then
             marker.offset = offset
@@ -617,6 +622,12 @@ moveGuide:SetPoint("BOTTOM", frame, "CENTER", 0, 48)
 moveGuide:SetText("Drag to Move  |  /fcompass move to Lock")
 moveGuide:Hide()
 
+local testLabel = frame:CreateFontString("ForeverCompassTestLabel", "OVERLAY", "GameFontNormal")
+testLabel:SetPoint("CENTER", frame, "CENTER", 0, 51)
+testLabel:SetText("Test Mode")
+testLabel:SetTextColor(1, 0.77, 0.32)
+testLabel:Hide()
+
 local function stopDrag()
     if not moving then
         return
@@ -636,11 +647,11 @@ local function setMoveMode(enabled)
     stopDrag()
     moveMode = enabled
     frame:EnableMouse(enabled)
-    moveGuide:SetShown(enabled)
+    moveGuide:SetShown(enabled and not testTargets)
 end
 
 local function updateVisibility()
-    if settings.enabled then
+    if settings.enabled or testTargets then
         refresh()
         frame:SetScript("OnUpdate", onUpdate)
         frame:Show()
@@ -648,6 +659,35 @@ local function updateVisibility()
         setMoveMode(false)
         frame:SetScript("OnUpdate", nil)
         frame:Hide()
+    end
+end
+
+local function setTestCount(count)
+    if count then
+        testTargets = {}
+        for index = 1, count do
+            testTargets[index] = { distance = index * 10 }
+        end
+    else
+        testTargets = nil
+    end
+    testLabel:SetShown(testTargets ~= nil)
+    moveGuide:SetShown(moveMode and not testTargets or false)
+    updateVisibility()
+end
+
+local function handleTestCommand(argument)
+    if argument == "" then
+        setTestCount(not testTargets and 64 or nil)
+    elseif argument == "off" then
+        setTestCount(nil)
+    else
+        local count = argument:match("^%d+$") and tonumber(argument)
+        if count and count >= 1 and count <= 128 then
+            setTestCount(count)
+        else
+            print("Forever Compass: use /fcompass test, /fcompass test 1–128, or /fcompass test off")
+        end
     end
 end
 
@@ -684,8 +724,10 @@ SlashCmdList.FOREVERCOMPASS = function(message)
         setMoveMode(false)
         settings.x, settings.y = 0, 88
         place()
+    elseif command == "test" or command:match("^test%s") then
+        handleTestCommand(command:match("^test%s*(.*)$"))
     else
-        print("Forever Compass: /fcompass toggle, /fcompass move, /fcompass reset")
+        print("Forever Compass: /fcompass toggle, /fcompass move, /fcompass reset, /fcompass test")
     end
 end
 
@@ -715,9 +757,9 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
         settings.y = finite(settings.y) and settings.y or 88
         place()
         updateVisibility()
-    elseif settings.enabled and event == "PLAYER_ENTERING_WORLD" then
+    elseif (settings.enabled or testTargets) and event == "PLAYER_ENTERING_WORLD" then
         refresh()
-    elseif settings.enabled and event == "USER_WAYPOINT_UPDATED" then
+    elseif (settings.enabled or testTargets) and event == "USER_WAYPOINT_UPDATED" then
         readPin()
         sampleDestinations()
         render()

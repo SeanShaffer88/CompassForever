@@ -12,5 +12,6 @@ Forever Compass adds a curved compass to World of Warcraft: Forever (Interface 1
 - `/fcompass` shows or hides the compass.
 - `/fcompass move` unlocks the compass. Drag it into place and repeat the command to lock it.
 - `/fcompass reset` restores the default position and locks it.
+- `/fcompass test` toggles 64 sample distances stacked at the center bearing. Use `/fcompass test 128` to try a different count from 1 to 128, or `/fcompass test off` to exit. **Test Mode** replaces live quest labels for the session and keeps the manual pin visible. Turning it off or reloading restores your saved compass visibility.
 
 The arc is a screen overlay. Markers require usable map coordinates in the character's current world space. Blizzard sometimes provides one shared map location for several objective lines, or gives no location. Shared locations appear once per quest.
