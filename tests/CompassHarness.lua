@@ -50,14 +50,30 @@ function methods:CreateFontString(name)
 end
 for _, method in ipairs({
     "SetAllPoints", "SetFrameLevel", "SetFrameStrata", "SetClampedToScreen", "SetMovable",
-    "SetUserPlaced", "RegisterForDrag", "StartMoving", "StopMovingOrSizing",
-    "SetAlpha", "SetColorTexture", "SetThickness", "SetRotation", "SetTexture",
-    "SetVertexColor", "SetTextColor", "SetShadowColor", "SetShadowOffset", "SetDrawLayer",
+    "SetUserPlaced", "RegisterForDrag",
+    "SetThickness", "SetRotation", "SetTexture",
+    "SetVertexColor", "SetShadowColor", "SetShadowOffset", "SetDrawLayer",
     "SetJustifyH", "SetJustifyV", "SetFont", "SetFontObject", "SetFontHeight", "SetAtlas",
     "SetBlendMode", "SetClipsChildren", "SetHitRectInsets", "SetFormattedText",
 }) do
     methods[method] = function() end
 end
+function methods:StartMoving() self.moving = true end
+function methods:StopMovingOrSizing() self.moving = false end
+function methods:SetColorTexture(...) self.color = { ... } end
+function methods:SetTextColor(...) self.color = { ... } end
+function methods:SetAlpha(alpha) self.alpha = alpha end
+function methods:SetChecked(checked) self.checked = checked end
+function methods:GetChecked() return self.checked end
+function methods:RegisterForClicks(...) self.clicks = { ... } end
+function methods:GetFontString() return self end
+function methods:SetNormalTexture(texture) self.normalTexture = texture end
+function methods:SetHighlightTexture(texture) self.highlightTexture = texture end
+function methods:SetNormalFontObject() end
+function methods:SetHighlightFontObject() end
+function methods:SetDisabledFontObject() end
+function methods:SetEnabled(enabled) self.enabled = enabled end
+function methods:GetParent() return self.parent end
 function methods:SetTextScale(scale) self.textScale = scale end
 function methods:SetScale(scale) self.scale = scale end
 function methods:EnableMouse(enabled) self.mouseEnabled = enabled end
@@ -68,8 +84,12 @@ function methods:GetFont() return "GameFontNormal", 12, "" end
 
 UIParent = region()
 UIParent:SetSize(1280, 720)
-function CreateFrame(_, name, parent)
+Minimap = region(UIParent)
+Minimap:SetSize(140, 140)
+UISpecialFrames = {}
+function CreateFrame(_, name, parent, template)
     local frame = region(parent)
+    if template == "UICheckButtonTemplate" then frame.Text = frame:CreateFontString() end
     if name then _G[name] = frame end
     return frame
 end
@@ -113,7 +133,9 @@ C_Map = {
 }
 playerSamples = 0
 facing = 0
-assert(loadfile(addonPath .. "/ForeverCompass.lua"))("ForeverCompass")
+local namespace = {}
+assert(loadfile(addonPath .. "/Settings.lua"))("CompassForever", namespace)
+assert(loadfile(addonPath .. "/CompassForever.lua"))("CompassForever", namespace)
 local frame = assert(ForeverCompassFrame)
 local heading = assert(ForeverCompassHeading)
 local marker = assert(ForeverCompassWaypoint)
@@ -151,7 +173,8 @@ local function pin(x, y)
     advance()
 end
 
-event("ADDON_LOADED", "ForeverCompass")
+ForeverCompassDB = { x = 0, y = 88, theme = "unknown", style = "bogus", opacity = "mistyped" }
+event("ADDON_LOADED", "CompassForever")
 event("PLAYER_ENTERING_WORLD")
 advance()
 assert(frame:IsVisible() and heading:IsVisible() and not marker:IsVisible(), "Default state")
@@ -656,4 +679,94 @@ checkCenteredOverflow(128, 128, false)
 slash("test off")
 questText(1, "! 300 yd")
 
-print("ForeverCompass mock passed: live quests and pins, centered 64/128 label overflow, viewport edges, and session-only test mode")
+local function click(control, button)
+    local handler = assert(control.scripts.OnClick, "Expected click handler")
+    handler(control, button or "LeftButton")
+end
+
+assert(ForeverCompassDB.theme == "classic" and ForeverCompassDB.style == "arc"
+    and ForeverCompassDB.opacity == 1, "Old settings are normalized with Classic defaults")
+local minimapButton = assert(CompassForeverMinimapButton)
+assert(minimapButton.parent == Minimap and minimapButton:IsVisible(), "Minimap button is independent of the HUD")
+click(minimapButton)
+assert(not frame:IsVisible() and minimapButton:IsVisible(), "Left click hides only the HUD")
+click(minimapButton, "RightButton")
+local panel = assert(CompassForeverSettings)
+local controls = assert(panel.controls)
+assert(panel:IsVisible() and not frame:IsVisible(), "Right click opens settings while HUD is off")
+assert(panel.dragHandle.scripts.OnDragStart and panel.dragHandle.scripts.OnDragStop, "Title bar is draggable")
+
+panel.dragHandle.scripts.OnDragStart(panel.dragHandle)
+assert(panel.moving, "Title-bar drag starts panel movement")
+panel.dragHandle.scripts.OnDragStop(panel.dragHandle)
+assert(not panel.moving, "Title-bar drag stops movement")
+
+local function colorChanged(before, after)
+    return before[1] ~= after[1] or before[2] ~= after[2] or before[3] ~= after[3]
+end
+local arcBefore = assert(frame.lines[20].color)
+local previewBefore = assert(panel.preview.heading[1].color)
+click(controls.themes.frost)
+assert(ForeverCompassDB.theme == "frost")
+assert(colorChanged(arcBefore, frame.lines[20].color), "Theme applies to live HUD")
+assert(colorChanged(previewBefore, panel.preview.heading[1].color), "Theme applies to preview while HUD is hidden")
+
+local previewArcY = panel.preview.arc[1].start[4]
+click(controls.styles.bar)
+assert(panel.preview.arc[1].start[4] ~= previewArcY, "Style updates the settings preview while the HUD is hidden")
+assert(ForeverCompassDB.style == "bar", "Style persists separately")
+assert(frame.lines[1].start[4] == frame.lines[20].finish[4], "Framed style has a straight baseline")
+click(controls.styles.tactical)
+assert(frame.lines[20].finish[4] < frame.lines[1].start[4], "Tactical has a center notch")
+click(controls.styles.flight)
+assert(not frame.lines[20]:IsShown() and CompassForeverStyleDetails.lines[1]:IsShown(),
+    "Flight breaks the center line for its chevron")
+click(controls.styles.arc)
+assert(frame.lines[1].start[4] < frame.lines[20].finish[4], "Arc style restores curvature")
+click(controls.opacityDown)
+assert(ForeverCompassDB.opacity < 1 and frame.alpha == ForeverCompassDB.opacity, "Opacity applies to HUD")
+click(controls.opacityUp)
+
+click(minimapButton)
+assert(frame:IsVisible() and panel:IsVisible(), "Visibility control leaves settings available")
+facing = 0
+pin(300, 0)
+questText(1, "! 300 yd")
+assert(marker:IsVisible())
+controls.showWaypoint:SetChecked(false)
+click(controls.showWaypoint)
+assert(not marker:IsVisible() and ForeverCompassDB.showWaypoint == false)
+controls.showWaypoint:SetChecked(true)
+click(controls.showWaypoint)
+assert(marker:IsVisible())
+controls.showQuests:SetChecked(false)
+click(controls.showQuests)
+assert(not questMarker(1):IsVisible() and ForeverCompassDB.showQuests == false)
+click(controls.test)
+questText(64, "! 640 yd")
+click(controls.test)
+assert(not questMarker(1):IsVisible(), "Stopping the preview restores hidden quest labels")
+controls.showQuests:SetChecked(true)
+click(controls.showQuests)
+questText(1, "! 300 yd")
+controls.showCardinals:SetChecked(false)
+click(controls.showCardinals)
+for _, label in ipairs(heading.labels) do
+    assert(not label:IsVisible(), "Cardinal labels hide")
+end
+controls.showCardinals:SetChecked(true)
+click(controls.showCardinals)
+assert(math.abs(labelX("N")) < 0.01, "Cardinal labels return without a heading change")
+
+controls.showMinimap:SetChecked(false)
+click(controls.showMinimap)
+assert(not minimapButton:IsVisible())
+click(controls.close)
+assert(not panel:IsVisible())
+slash("settings")
+assert(panel:IsVisible(), "Slash command recovers a hidden minimap button")
+controls.showMinimap:SetChecked(true)
+click(controls.showMinimap)
+assert(minimapButton:IsVisible())
+
+print("CompassForever mocks passed: tracking, crowded labels, settings, live themes, styles, and minimap controls")
