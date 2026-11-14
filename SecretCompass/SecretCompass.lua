@@ -11,9 +11,12 @@ for _, style in ipairs(styles) do
 end
 local activeStyle = styles[1]
 local settings, settingsUI
+local secretTracker, secretsUI
+local secretStep, secretContinent, secretX, secretY
+local secretBearing, secretDistance
 local directions = { [0] = "N", [90] = "E", [180] = "S", [270] = "W" }
 
-local frame = CreateFrame("Frame", "ForeverCompassFrame", UIParent)
+local frame = CreateFrame("Frame", "SecretCompassFrame", UIParent)
 frame:SetSize(halfWidth * 2, 280)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 88)
 frame:Hide()
@@ -22,7 +25,7 @@ local function hudScale()
     return frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
 end
 
-local headingLayer = CreateFrame("Frame", "ForeverCompassHeading", frame)
+local headingLayer = CreateFrame("Frame", "SecretCompassHeading", frame)
 headingLayer:SetAllPoints(frame)
 headingLayer:Hide()
 
@@ -53,7 +56,7 @@ for index = 1, 40 do
     arc[index] = { line = segment, alpha = alpha, fromX = fromX, toX = toX }
 end
 
-local detailLayer = CreateFrame("Frame", "CompassForeverStyleDetails", frame)
+local detailLayer = CreateFrame("Frame", "SecretCompassStyleDetails", frame)
 detailLayer:SetAllPoints(frame)
 local details = {}
 local function positionStyleDetails()
@@ -146,7 +149,7 @@ local function getHeading()
     end
 end
 
-local waypoint = CreateFrame("Frame", "ForeverCompassWaypoint", frame)
+local waypoint = CreateFrame("Frame", "SecretCompassWaypoint", frame)
 waypoint:SetSize(1, 1)
 waypoint:Hide()
 local distanceLabel = waypoint:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -223,9 +226,9 @@ local function distanceText(yards, edge, prefix)
     return text
 end
 
-local previousOffset, previousYards, previousEdge, previousSize
-local function updateWaypoint(heading, bearing, distance)
-    if not settings.showWaypoint or not heading or not bearing then
+local previousOffset, previousYards, previousEdge, previousSize, previousSecret
+local function updateWaypoint(heading, bearing, distance, secret)
+    if (not secret and not settings.showWaypoint) or not heading or not bearing then
         if waypoint:IsShown() then
             waypoint:Hide()
         end
@@ -249,9 +252,9 @@ local function updateWaypoint(heading, bearing, distance)
     end
 
     local yards = math.floor(distance + 0.5)
-    if yards ~= previousYards or edge ~= previousEdge then
-        distanceLabel:SetText(distanceText(yards, edge))
-        previousYards, previousEdge = yards, edge
+    if yards ~= previousYards or edge ~= previousEdge or secret ~= previousSecret then
+        distanceLabel:SetText(distanceText(yards, edge, secret and "Secret" or nil))
+        previousYards, previousEdge, previousSecret = yards, edge, secret
     end
 
     local size = math.max(5, 9 - math.floor(distance / 200))
@@ -279,7 +282,7 @@ local function getQuestMarker(index)
     if questMarkers[index] then
         return questMarkers[index]
     end
-    local marker = CreateFrame("Frame", "ForeverCompassQuest" .. index, frame)
+    local marker = CreateFrame("Frame", "SecretCompassQuest" .. index, frame)
     marker:SetSize(1, 1)
     marker:Hide()
     local label = marker:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -392,18 +395,45 @@ local function closestFirst(left, right)
     return left.order < right.order
 end
 
+local function playerPosition()
+    local map = C_Map.GetBestMapForUnit("player")
+    if finite(map) then
+        local continent, x, y = worldPosition(map, C_Map.GetPlayerMapPosition(map, "player"))
+        return map, continent, x, y
+    end
+end
+
+local function resolveSecret()
+    secretContinent, secretX, secretY = nil, nil, nil
+    secretBearing, secretDistance = nil, nil
+    if secretTracker then
+        local step, waypoint = secretTracker:GetCurrentStep()
+        secretStep = step
+        if waypoint then
+            local ok, continent, x, y = pcall(worldCoordinates, waypoint.mapID, waypoint.x, waypoint.y)
+            if ok then
+                secretContinent, secretX, secretY = continent, x, y
+            end
+        end
+    end
+end
+
 local bearing, distance
 local function sampleDestinations()
+    if secretStep and not testTargets then
+        secretBearing, secretDistance = nil, nil
+        if secretContinent then
+            local _, continent, x, y = playerPosition()
+            secretBearing, secretDistance = destinationBearing(continent, x, y, secretContinent, secretX, secretY)
+        end
+        return
+    end
     if questsDirty then
         readQuestWatches()
     end
     local playerMap, continent, x, y
     if pinContinent or #watches > 0 then
-        local map = C_Map.GetBestMapForUnit("player")
-        if finite(map) then
-            playerMap = map
-            continent, x, y = worldPosition(map, C_Map.GetPlayerMapPosition(map, "player"))
-        end
+        playerMap, continent, x, y = playerPosition()
     end
     if questsDirty or playerMap ~= lastPlayerMap or (continent and continent ~= lastPlayerContinent) then
         questsDirty = false
@@ -561,7 +591,7 @@ end
 local lastQuestCount, lastQuestLeft, lastQuestRight, lastQuestBottom, lastQuestTop
 local function renderQuests(heading)
     local targets = testTargets or nearbyTargets
-    local count = (testTargets or (heading and settings.showQuests)) and #targets or 0
+    local count = (testTargets or (heading and settings.showQuests and not secretStep)) and #targets or 0
     for index = count + 1, math.min(lastQuestCount or 0, #questMarkers) do
         questMarkers[index].frame:Hide()
     end
@@ -637,11 +667,40 @@ local function renderQuests(heading)
     end
 end
 
+local secretStatus
+local function updateSecretStatus(heading)
+    local status = ""
+    if secretStep then
+        if testTargets then
+            status = "Compass paused during the overflow test."
+        elseif not settings.enabled or settings.opacity == 0 then
+            status = "The HUD is hidden."
+        elseif #secretStep.waypoints > 0 then
+            if heading and secretBearing then
+                status = "Follow the Secret marker on your compass."
+            else
+                status = "Bearing unavailable here. Use the map location."
+            end
+        end
+    end
+    if status ~= secretStatus then
+        secretStatus = status
+        if secretsUI then
+            secretsUI:RefreshStatus()
+        end
+    end
+end
+
 local function render()
     local heading = getHeading()
     updateHeading(heading)
-    updateWaypoint(heading, bearing, distance)
+    if secretStep and not testTargets then
+        updateWaypoint(heading, secretBearing, secretDistance, true)
+    else
+        updateWaypoint(heading, bearing, distance)
+    end
     renderQuests(heading)
+    updateSecretStatus(heading)
 end
 
 local headingElapsed, waypointElapsed = 0, 0
@@ -667,11 +726,11 @@ local function refresh()
 end
 
 local moving, moveMode
-local lockButton = CreateFrame("Button", "CompassForeverLockButton", UIParent, "UIPanelButtonTemplate")
+local lockButton = CreateFrame("Button", "SecretCompassLockButton", UIParent, "UIPanelButtonTemplate")
 lockButton:SetSize(146, 24)
 lockButton:SetFrameStrata("DIALOG")
 lockButton:SetClampedToScreen(true)
-lockButton:SetText("Lock CompassForever")
+lockButton:SetText("Lock SecretCompass")
 lockButton:Hide()
 
 local function place()
@@ -688,7 +747,7 @@ moveGuide:SetPoint("BOTTOM", frame, "CENTER", 0, 48)
 moveGuide:SetText("Drag to Move")
 moveGuide:Hide()
 
-local testLabel = frame:CreateFontString("ForeverCompassTestLabel", "OVERLAY", "GameFontNormal")
+local testLabel = frame:CreateFontString("SecretCompassTestLabel", "OVERLAY", "GameFontNormal")
 testLabel:SetPoint("CENTER", frame, "CENTER", 0, 51)
 testLabel:SetText("Test Mode")
 testLabel:Hide()
@@ -762,6 +821,9 @@ end
 
 local function updateVisibility()
     if settings.enabled or testTargets then
+        if secretStep and not secretContinent then
+            resolveSecret()
+        end
         refresh()
         frame:SetScript("OnUpdate", onUpdate)
         frame:Show()
@@ -769,6 +831,7 @@ local function updateVisibility()
         setMoveMode(false)
         frame:SetScript("OnUpdate", nil)
         frame:Hide()
+        updateSecretStatus()
     end
 end
 
@@ -800,7 +863,7 @@ local function handleTestCommand(argument)
         if count and count >= 1 and count <= 128 then
             setTestCount(count)
         else
-            print("Forever Compass: use /fcompass test, /fcompass test 1–128, or /fcompass test off")
+            print("SecretCompass: use /secretcompass test, /secretcompass test 1–128, or /secretcompass test off")
         end
     end
 end
@@ -883,6 +946,7 @@ local function setPreference(key, value)
         updateVisibility()
     elseif key == "opacity" then
         applyOpacity()
+        updateSecretStatus(getHeading())
     elseif key == "scale" then
         stopDrag()
         frame:SetScale(value)
@@ -903,8 +967,72 @@ local function setPreference(key, value)
     refreshSettingsUI()
 end
 
-SLASH_FOREVERCOMPASS1 = "/fcompass"
-SlashCmdList.FOREVERCOMPASS = function(message)
+local function initSecrets()
+    if not ns.CreateSecretTracker or not ns.CreateSecretsUI then
+        return
+    end
+    if type(SecretCompassSecretDB) ~= "table" then
+        SecretCompassSecretDB = {}
+    end
+    secretTracker = ns.CreateSecretTracker(SecretCompassSecretDB, function()
+        if not secretTracker then
+            return
+        end
+        resolveSecret()
+        if settings.enabled or testTargets then
+            refresh()
+        else
+            updateSecretStatus()
+        end
+        if secretsUI then
+            secretsUI:Refresh()
+        end
+    end)
+    local function standaloneRoute()
+        local routes = ns.StandaloneSecrets and ns.StandaloneSecrets()
+        return routes and routes[1]
+    end
+    secretsUI = ns.CreateSecretsUI({
+        getRoute = function() return secretTracker:GetRoute() end,
+        getCurrentStep = function() return secretTracker:GetCurrentStep() end,
+        status = function() return secretStatus end,
+        hudHidden = function() return not settings.enabled or settings.opacity == 0 end,
+        enableHUD = function()
+            if settings.opacity == 0 then
+                setPreference("opacity", 1)
+            end
+            setPreference("enabled", true)
+        end,
+        canStart = function() return standaloneRoute() ~= nil end,
+        start = function() secretTracker:Track(standaloneRoute()) end,
+        step = function(delta) secretTracker:Step(delta) end,
+        next = function()
+            local route, index = secretTracker:GetRoute()
+            if route and index == #route.steps then
+                secretTracker:Stop()
+                secretsUI:ShowFinished()
+            else
+                secretTracker:Step(1)
+            end
+        end,
+        stop = function() secretTracker:Stop() end,
+        cycle = function() secretTracker:CycleLocation() end,
+    })
+    resolveSecret()
+    if ns.AttachSecretChecklist then
+        ns.AttachSecretChecklist(function(route)
+            local tracked = secretTracker:Track(route)
+            if tracked then
+                secretsUI:Open()
+            end
+            return tracked
+        end)
+    end
+end
+
+SLASH_SECRETCOMPASS1 = "/secretcompass"
+SLASH_SECRETCOMPASS2 = "/fcompass"
+SlashCmdList.SECRETCOMPASS = function(message)
     if not settings then
         return
     end
@@ -917,10 +1045,12 @@ SlashCmdList.FOREVERCOMPASS = function(message)
         resetPosition()
     elseif command == "settings" and settingsUI then
         settingsUI:Toggle()
+    elseif command == "secrets" and secretsUI then
+        secretsUI:Toggle()
     elseif command == "test" or command:match("^test%s") then
         handleTestCommand(command:match("^test%s*(.*)$"))
     else
-        print("Forever Compass: /fcompass toggle, /fcompass move, /fcompass reset, /fcompass test, /fcompass settings")
+        print("SecretCompass: /secretcompass toggle, /secretcompass move, /secretcompass reset, /secretcompass test, /secretcompass settings, /secretcompass secrets")
     end
 end
 
@@ -960,6 +1090,7 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
         frame:SetAlpha(settings.opacity)
         frame:SetScale(settings.scale)
         place()
+        initSecrets()
         updateVisibility()
         if ns and ns.CreateSettingsUI then
             settingsUI = ns.CreateSettingsUI({
@@ -973,11 +1104,15 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
                 styleSegmentShown = styleSegmentShown,
                 move = startOrStopMove,
                 resetPosition = resetPosition,
+                openSecrets = secretsUI and function() secretsUI:Open() end,
                 test = setTestCount,
                 testActive = function() return testTargets ~= nil end,
             })
         end
     elseif (settings.enabled or testTargets) and event == "PLAYER_ENTERING_WORLD" then
+        if secretStep and not secretContinent then
+            resolveSecret()
+        end
         refresh()
     elseif (settings.enabled or testTargets) and event == "USER_WAYPOINT_UPDATED" then
         readPin()

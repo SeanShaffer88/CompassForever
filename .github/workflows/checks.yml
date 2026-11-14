@@ -19,7 +19,7 @@ jobs:
           sudo apt-get install --yes lua5.1
       - name: Check syntax and mock the Forever APIs
         run: |
-          grep -Fxq '## Interface: 16001' CompassForever/CompassForever.toc
-          test -s CompassForever/Media/MinimapCompass.tga
-          luac5.1 -p CompassForever/Styles.lua CompassForever/Settings.lua CompassForever/CompassForever.lua tests/CompassHarness.lua
-          lua5.1 tests/CompassHarness.lua CompassForever
+          grep -Fxq '## Interface: 16001' SecretCompass/SecretCompass.toc
+          test -s SecretCompass/Media/MinimapCompass.tga
+          luac5.1 -p SecretCompass/Styles.lua SecretCompass/Settings.lua SecretCompass/Secrets.lua SecretCompass/SecretsUI.lua SecretCompass/SecretChecklistBridge.lua SecretCompass/SecretCompass.lua tests/CompassHarness.lua
+          lua5.1 tests/CompassHarness.lua SecretCompass
