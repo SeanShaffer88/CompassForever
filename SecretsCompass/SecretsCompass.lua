@@ -47,6 +47,9 @@ local function makeLine(parent, layer, width, red, green, blue, alpha)
     return line
 end
 
+local stylePlate = frame:CreateTexture(nil, "BACKGROUND", nil, -1)
+stylePlate:Hide()
+
 local arc = {}
 for index = 1, 40 do
     local fromX = -halfWidth + (index - 1) * halfWidth / 20
@@ -62,8 +65,9 @@ local detailLayer = CreateFrame("Frame", "SecretsCompassStyleDetails", frame)
 detailLayer:SetAllPoints(frame)
 local details = {}
 local function positionStyleDetails()
-    local color = activeStyle.arc
+    ns.PositionCompassStylePlate(stylePlate, frame, activeStyle, 1, 0)
     for index, decoration in ipairs(activeStyle.details) do
+        local color = decoration[7] or activeStyle.arc
         local width, alpha = decoration[5] or 1, decoration[6] or 0.45
         local line = details[index]
         if not line then
@@ -127,7 +131,7 @@ local function updateHeading(heading)
             tick.label:SetShown(visible and settings.showCardinals)
         end
         if visible then
-            local x = offset * halfWidth / halfView
+            local x = offset * (activeStyle.trackHalfWidth or halfWidth) / halfView
             local y = arcY(x)
             local length = tick.label and 9 or 5
             if activeStyle.tickBelow then
@@ -236,7 +240,7 @@ local function updateWaypoint(heading, bearing, distance, approximate)
     end
     local offset, edge = markerOffset(heading, bearing, approximate and 1 or distance)
     if offset ~= previousOffset then
-        local x = offset * halfWidth / halfView
+        local x = offset * (activeStyle.trackHalfWidth or halfWidth) / halfView
         waypoint:ClearAllPoints()
         waypoint:SetPoint("CENTER", frame, "CENTER", x, arcY(x) + 37)
         if previousOffset == nil or (offset > 60) ~= (previousOffset > 60) then
@@ -643,6 +647,21 @@ local function initSecrets()
     if type(SecretCompassSecretDB) ~= "table" then
         SecretCompassSecretDB = {}
     end
+    local collapsedCategories = SecretCompassSecretDB.collapsedCategories
+    if not readable(collapsedCategories) or type(collapsedCategories) ~= "table" then
+        collapsedCategories = {}
+        SecretCompassSecretDB.collapsedCategories = collapsedCategories
+    end
+    local function standaloneRoutes()
+        return ns.StandaloneSecrets and ns.StandaloneSecrets() or {}
+    end
+    local function resolveBuiltIn(id, sourceURL)
+        for _, route in ipairs(standaloneRoutes()) do
+            if route.id == id and route.sourceURL == sourceURL then
+                return route
+            end
+        end
+    end
     secretTracker = ns.CreateSecretTracker(SecretCompassSecretDB, function()
         if not secretTracker then
             return
@@ -653,7 +672,7 @@ local function initSecrets()
         if secretsUI then
             secretsUI:Refresh()
         end
-    end)
+    end, resolveBuiltIn)
     navigationMode = readable(SecretCompassSecretDB.navigation) and SecretCompassSecretDB.navigation == "external"
         and "external" or "hud"
     secretNavigation = ns.CreateWaypointNavigation(function(status)
@@ -663,9 +682,6 @@ local function initSecrets()
             secretsUI:RefreshStatus()
         end
     end)
-    local function standaloneRoutes()
-        return ns.StandaloneSecrets and ns.StandaloneSecrets() or {}
-    end
     secretsUI = ns.CreateSecretsUI({
         getRoute = function() return secretTracker:GetRoute() end,
         getCurrentStep = function() return secretTracker:GetCurrentStep() end,
@@ -698,6 +714,8 @@ local function initSecrets()
         end,
         getRoutes = standaloneRoutes,
         getResumeStep = function(route) return secretTracker:GetResumeStep(route) end,
+        getLastPausedRoute = function() return secretTracker:GetLastPausedRoute() end,
+        continueLast = function() secretTracker:ContinueLastSecret() end,
         hasFinished = function(route) return secretTracker:HasFinished(route) end,
         start = function(id)
             for _, route in ipairs(standaloneRoutes()) do
@@ -713,7 +731,7 @@ local function initSecrets()
         next = SecretsCompassNextStep,
         stop = function() secretTracker:Stop() end,
         cycle = function() secretTracker:CycleLocation() end,
-    })
+    }, collapsedCategories)
     resolveSecret()
     if ns.AttachSecretChecklist then
         ns.AttachSecretChecklist(function(route)

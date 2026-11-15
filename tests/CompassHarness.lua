@@ -71,7 +71,13 @@ function methods:CreateLine()
     self.lines[#self.lines + 1] = line
     return line
 end
-function methods:CreateTexture() return region(self) end
+function methods:CreateTexture(_name, layer, _template, sublevel)
+    local texture = region(self)
+    texture.drawLayer, texture.sublevel = layer, sublevel
+    self.textures = self.textures or {}
+    self.textures[#self.textures + 1] = texture
+    return texture
+end
 function methods:CreateFontString(name)
     local label = region(self)
     if name then _G[name] = label end
@@ -260,6 +266,7 @@ SecretCompassSecretDB = {
     reveals = { ["login-fixture"] = "distance" },
 }
 event("ADDON_LOADED", "SecretsCompass")
+assert(next(SecretCompassSecretDB.collapsedCategories) == nil, "Legacy saves start with all journal categories expanded")
 event("PLAYER_ENTERING_WORLD")
 advance()
 assert(frame:IsVisible() and marker:IsVisible() and marker.labels[1].text == "Secret 240 yd",
@@ -482,8 +489,46 @@ local previewArcY = panel.preview.arc[1].start[4]
 click(controls.styles.bar)
 assert(panel.preview.arc[1].start[4] ~= previewArcY, "Style updates the settings preview while the HUD is hidden")
 assert(ForeverCompassDB.style == "bar", "Style persists separately")
-assert(frame.lines[1].start[4] == frame.lines[20].finish[4], "Framed style has a straight baseline")
-click(controls.styles.tactical)
+do
+    local plate = assert(frame.textures[1])
+    local previewPlate = panel.preview.stylePlate
+    assert(plate:IsShown() and previewPlate:IsShown()
+        and plate.drawLayer == "BACKGROUND" and plate.sublevel == -1
+        and previewPlate.drawLayer == "BACKGROUND" and previewPlate.sublevel == -1,
+        "Framed draws a plate behind both sets of compass ticks")
+    local ratio = previewPlate:GetWidth() / plate:GetWidth()
+    assert(ratio < 1 and math.abs(previewPlate:GetHeight() - plate:GetHeight() * ratio) < 0.001
+        and table.concat(previewPlate.color, ",") == table.concat(plate.color, ","),
+        "Framed plate has the same proportions and color in both renderers")
+    assert(not frame.lines[20]:IsShown() and not panel.preview.arc[20]:IsShown(),
+        "Framed leaves the plate free of a line through its center")
+
+    local ornaments = SecretsCompassStyleDetails.lines
+    local previewOrnaments = panel.preview.details
+    for index = 1, #ornaments do
+        local live, previewDetail = ornaments[index], previewOrnaments[index]
+        if live:IsShown() then
+            assert(previewDetail:IsShown()
+                and math.abs(previewDetail.start[3] - live.start[3] * ratio) < 0.001
+                and math.abs(previewDetail.finish[3] - live.finish[3] * ratio) < 0.001
+                and math.abs(previewDetail.finish[4] - previewDetail.start[4]
+                    - (live.finish[4] - live.start[4]) * ratio) < 0.001
+                and table.concat(previewDetail.color, ",") == table.concat(live.color, ","),
+                "Framed rails, caps, and caret share geometry and color")
+        end
+    end
+    slash("move")
+    facing = -math.rad(109)
+    advance()
+    assert(math.abs(labelX("N")) < plate:GetWidth() / 2
+        and heading.lines[1].start[4] < heading.lines[1].finish[4],
+        "The cardinal remains inside the plate while its tick points below the label")
+    facing = 0
+    slash("move")
+    click(controls.styles.tactical)
+    assert(not plate:IsShown() and not previewPlate:IsShown(),
+        "Switching styles removes the Framed plate in both renderers")
+end
 assert(frame.lines[20].finish[4] < frame.lines[1].start[4], "Tactical has a center notch")
 click(controls.styles.flight)
 assert(not frame.lines[20]:IsShown() and SecretsCompassStyleDetails.lines[1]:IsShown(),
@@ -717,7 +762,7 @@ do
         end
         local lastRow = secrets.controls.routes[isAlliance and "silver-of-the-waves" or "whispering-horror-residue"]
         local _, _, rowY = lastRow:GetPoint()
-        assert(secrets:GetHeight() == (isAlliance and 1015 or 985)
+        assert(secrets:GetHeight() == (isAlliance and 1031 or 1001)
             and not secrets.controls.routePageNext:IsVisible()
             and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 15,
             "The last route row fits above navigation")
@@ -1056,12 +1101,12 @@ do
     end
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(1, 12, 697)
+    assertPage(1, 11, 683)
     assert(secrets.progress:GetText() == "1 of 21 Built-In Routes Finished",
         "Completion includes finished routes off the current page")
     SecretCompassSecretDB.finishedRoutes["whispering-horror-residue"] = nil
     click(nextPage)
-    assertPage(13, 21, 697)
+    assertPage(12, 21, 683)
     click(lateRoute)
     assert(secrets.routeTitle:GetText() == "Whispering Horror Residue" and not range:IsVisible()
         and not previousPage:IsVisible() and not nextPage:IsVisible() and not lateRoute:IsVisible(),
@@ -1070,9 +1115,9 @@ do
         assert(not heading:IsVisible(), "Tracking hides category headings")
     end
     click(controls.stop)
-    assertPage(13, 21, 697)
+    assertPage(12, 21, 683)
     click(previousPage)
-    assertPage(1, 12, 697)
+    assertPage(1, 11, 683)
 
     click(controls.routes["condor-hatchling"])
     click(controls.revealCoordinates)
@@ -1081,7 +1126,7 @@ do
     assert(controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90",
         "Next Location reaches an alternate Lord Condar search area")
     click(controls.stop)
-    assertPage(1, 12, 697)
+    assertPage(1, 11, 683)
 
     click(controls.routes["bitter-baitling"])
     click(controls.revealCoordinates)
@@ -1096,30 +1141,30 @@ do
     assert(controls.mapCommandInput:GetText() == "/mappin 1434 26.70 76.30",
         "The final step leads to Jang for the prize exchange")
     click(controls.stop)
-    assertPage(1, 12, 697)
+    assertPage(1, 11, 683)
 
     faction = "Alliance"
     choices = displayOrder(true)
     UIParent:SetHeight(480)
     fireAddonEvent("UI_SCALE_CHANGED")
-    assertPage(1, 6, 469)
+    assertPage(1, 5, 455)
     click(nextPage)
-    assertPage(7, 11, 469)
+    assertPage(6, 9, 455)
     click(nextPage)
-    assertPage(12, 16, 469)
+    assertPage(10, 13, 455)
     click(nextPage)
-    assertPage(17, 21, 469)
+    assertPage(14, 17, 455)
     click(nextPage)
-    assertPage(22, 22, 469)
+    assertPage(18, 22, 455)
     faction = "Horde"
     choices = displayOrder(false)
     slash("secrets")
     slash("secrets")
-    assertPage(16, 21, 469)
+    assertPage(18, 21, 455)
     assert(not controls.routes["baby-crocolisk"]:IsVisible(), "The Alliance route stays hidden on the Horde page")
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(13, 21, 697)
+    assertPage(12, 21, 683)
     UIParent:SetHeight(1080)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     assert(not range:IsVisible() and cozyButton:IsVisible() and lateRoute:IsVisible(),
@@ -1129,7 +1174,28 @@ do
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     click(nextPage)
-    assertPage(13, 21, 697)
+    assertPage(12, 21, 683)
+    local status = controls.routeStatus
+    local _, _, statusY = status:GetPoint()
+    local _, _, menuY = controls.routeCategoryMenu:GetPoint()
+    assert(status:IsVisible() and status:GetText() == "Status: All"
+        and statusY - status:GetHeight() > menuY, "The category menu clears the status control")
+    click(controls.routeCategory)
+    click(status)
+    assert(status:GetText() == "Status: Completed" and controls.routeEmpty:IsVisible()
+        and not range:IsVisible() and not controls.routeCategoryMenu:IsVisible()
+        and secrets.progress:GetText() == "0 of 21 Built-In Routes Finished",
+        "Completed shows an empty result at zero progress and closes the type menu")
+    click(status)
+    assert(status:GetText() == "Status: Unfinished")
+    assertPage(1, 11, 683)
+    click(nextPage)
+    click(status)
+    assert(status:GetText() == "Status: All")
+    assertPage(1, 11, 683)
+    click(nextPage)
+    click(controls.routeExpandAll)
+    assertPage(1, 11, 683)
     local search = controls.routeSearch
     search:SetText("   sLiMe  ")
     local slime = controls.routes["excitable-slime"]
@@ -1146,8 +1212,36 @@ do
     click(controls.routeCategory)
     click(controls.routeCategoryOptions.pets)
     assert(slime:IsVisible() and not controls.routeEmpty:IsVisible(), "Changing categories restores a matching route")
+    click(status)
+    assert(not slime:IsVisible() and controls.routeEmpty:IsVisible(), "Completed excludes the unfinished pet")
+    click(status)
+    assert(slime:IsVisible() and not cozyButton:IsVisible()
+        and search:GetText() == "   sLiMe  " and controls.routeCategory:GetText() == "Pets  v",
+        "Status filtering combines with the current title and type")
     local pets = assert(controls.routeHeadings["Pets"])
+    local _, _, expandY = controls.routeExpandAll:GetPoint()
+    local _, _, petsY = pets:GetPoint()
+    assert(expandY - controls.routeExpandAll:GetHeight() > petsY, "The bulk controls clear the first heading")
+    local savedCategories = SecretCompassSecretDB.collapsedCategories
+    savedCategories["future-category"] = true
+    click(controls.routeCategory)
+    click(controls.routeCollapseAll)
+    for _, key in ipairs({ "pets", "collectibles", "utility", "professions", "mysteries", "other" }) do
+        assert(savedCategories[key] == true, "Collapse All updates categories outside the current filter")
+    end
+    assert(pets:GetText() == "+  PETS" and not slime:IsVisible() and not cozyButton:IsVisible()
+        and search:GetText() == "   sLiMe  " and controls.routeCategory:GetText() == "Pets  v"
+        and not controls.routeCategoryMenu:IsVisible() and not controls.routeEmpty:IsVisible()
+        and secrets.progress:GetText() == "0 of 21 Built-In Routes Finished",
+        "Collapse All preserves the search, type filter and progress")
+    click(controls.routeExpandAll)
+    assert(slime:IsVisible() and not cozyButton:IsVisible() and pets:GetText() == "-  PETS"
+        and savedCategories["future-category"] == true and savedCategories.pets == nil
+        and savedCategories.utility == nil and savedCategories.other == nil,
+        "Expand All restores matching rows and leaves unknown saved categories untouched")
+    savedCategories["future-category"] = nil
     click(pets)
+    assert(SecretCompassSecretDB.collapsedCategories.pets == true, "Collapsing a heading saves its category key")
     assert(pets:IsVisible() and pets:GetText() == "+  PETS" and not slime:IsVisible()
         and not controls.routeEmpty:IsVisible(),
         "A collapsed category stays visible with matching results and hides its route rows")
@@ -1155,6 +1249,7 @@ do
     local gustjumper = controls.routes["musical-gustjumper"]
     assert(pets:IsVisible() and not gustjumper:IsVisible(), "Changing search preserves the category's collapse state")
     click(pets)
+    assert(SecretCompassSecretDB.collapsedCategories.pets == nil, "Expanding a heading clears its saved key")
     assert(pets:GetText() == "-  PETS" and gustjumper:IsVisible() and not slime:IsVisible(),
         "Expanding a category restores only the routes matching the current search")
     search:SetText("[")
@@ -1162,16 +1257,20 @@ do
     search:SetText("slime")
     search:SetFocus()
     click(slime)
-    assert(not search:IsVisible() and not search:HasFocus() and not controls.routeCategory:IsVisible(),
+    assert(not search:IsVisible() and not search:HasFocus() and not controls.routeCategory:IsVisible()
+        and not controls.routeExpandAll:IsVisible() and not controls.routeCollapseAll:IsVisible()
+        and not status:IsVisible(),
         "Active routes hide browse controls and release search focus")
     assertNavigationPosition()
     click(controls.stop)
-    assert(search:IsVisible() and search:GetText() == "slime" and slime:IsVisible(),
+    assert(search:IsVisible() and search:GetText() == "slime" and slime:IsVisible()
+        and status:GetText() == "Status: Unfinished",
         "Pausing a route restores the filtered journal")
+    click(status)
     click(controls.routeCategory)
     click(controls.routeCategoryOptions.all)
     search:SetText("")
-    assertPage(1, 12, 697)
+    assertPage(1, 11, 683)
     click(nextPage)
     click(controls.routeHeadings["Quests & Mysteries"])
     click(controls.routeHeadings["Professions"])
@@ -1303,6 +1402,8 @@ assert(SecretCompassSecretDB.route == nil and cozyButton:IsVisible()
     and cozyButton.action:GetText():find("Step 2", 1, true), "Pause exposes the saved step in the picker")
 
 completionFlags[96335] = true
+click(secrets.controls.routeStatus)
+click(secrets.controls.routeStatus)
 click(alcazButton)
 assert(not cozyButton:IsVisible() and not alcazButton:IsVisible(), "Picker hides during an active route")
 assert(secrets.routeTitle:GetText() == "Alcaz Operative Insignia" and SecretCompassSecretDB.index == 1)
@@ -1356,13 +1457,23 @@ assert(#alcaz.steps[4].waypoints == 0 and not marker:IsVisible(), "Final assembl
 assert(not mapCommand:IsVisible() and not mapInput:IsVisible(), "Text-only steps have no map command")
 assert(not SecretCompassSecretDB.finishedRoutes[alcaz.id], "Reaching the final step does not mark it finished")
 slash("next")
-assert(SecretCompassSecretDB.route == nil and alcazButton:IsVisible()
-    and alcazButton.action:GetText():find("Replay", 1, true), "Finished routes are offered for replay")
+assert(SecretCompassSecretDB.route == nil and not alcazButton:IsVisible()
+    and secrets.controls.routeStatus:GetText() == "Status: Unfinished"
+    and secrets.progress:GetText() == "1 of 21 Built-In Routes Finished",
+    "Finishing a route removes it from Unfinished and updates the overall count")
+click(secrets.controls.routeStatus)
+assert(alcazButton:IsVisible() and cozyButton:IsVisible(), "All displays finished and unfinished routes")
+click(secrets.controls.routeStatus)
+assert(alcazButton:IsVisible() and not cozyButton:IsVisible()
+    and alcazButton.action:GetText():find("Replay", 1, true), "Completed offers finished routes for replay")
 click(alcazButton)
 assert(SecretCompassSecretDB.index == 1, "Replay starts from the first step")
 click(secrets.controls.next)
 click(secrets.controls.stop)
-assert(alcazButton.action:GetText():find("Resume", 1, true), "A paused replay can resume")
+assert(alcazButton:IsVisible() and alcazButton.action:GetText():find("Resume", 1, true),
+    "A paused replay remains completed and can resume")
+click(secrets.controls.routeStatus)
+click(secrets.controls.routeStatus)
 click(cozyButton)
 assert(SecretCompassSecretDB.index == 2 and SecretCompassSecretDB.route.title == "Cozy Sleeping Bag",
     "Starting a second secret preserves the first secret's checkpoint")
@@ -1755,6 +1866,632 @@ do
     ui:Refresh()
     assert(visibilityChanges == 2 and not brokerOptions.hide, "The visibility setting shows the registered button")
     LibStub = nil
+end
+
+do
+    -- Reload the addon's runtime into new frames with SavedVariables already present.
+    local route = namespace.StandaloneSecrets()[1]
+    local collapsed = { pets = true, utility = "true", ["future-category"] = true }
+    SecretCompassSecretDB = {
+        route = route, index = 2, navigation = "external",
+        reveals = { [route.id] = "distance" },
+        collapsedCategories = collapsed,
+    }
+    assert(loadfile(addonPath .. "/SecretsCompass.lua"))("SecretsCompass", namespace)
+    local loginFrame = SecretsCompassFrame
+    loginFrame.scripts.OnEvent(loginFrame, "ADDON_LOADED", "SecretsCompass")
+    assert(SecretCompassSecretDB.collapsedCategories == collapsed and SecretCompassSecretDB.index == 2
+        and SecretCompassSecretDB.reveals[route.id] == "distance" and SecretCompassSecretDB.navigation == "external",
+        "Saved journal categories load alongside route progress, reveal level and navigation")
+
+    SlashCmdList.SECRETSCOMPASS("secrets")
+    local reopened = SecretsCompassSecrets
+    assert(reopened ~= secrets and reopened.progress:GetText():match("^Step 2"), "The reload opens the restored route")
+    click(reopened.controls.stop)
+    local pets = reopened.controls.routeHeadings["Pets"]
+    local utility = reopened.controls.routeHeadings["Gear & Utility"]
+    assert(pets:IsVisible() and pets:GetText() == "+  PETS" and not reopened.controls.routes["excitable-slime"]
+        and utility:GetText() == "-  GEAR & UTILITY" and collapsed["future-category"] == true,
+        "Restored booleans collapse known categories while invalid values remain expanded")
+    click(pets)
+    assert(collapsed.pets == nil and reopened.controls.routes["excitable-slime"]:IsVisible(),
+        "Reopening a restored category updates SavedVariables and shows its routes")
+end
+
+do
+    local runtimeTracker
+    local function reloadJournal(saved)
+        SecretCompassSecretDB = saved
+        assert(loadfile(addonPath .. "/SecretsCompass.lua"))("SecretsCompass", namespace)
+        local factory = namespace.CreateSecretTracker
+        namespace.CreateSecretTracker = function(...)
+            runtimeTracker = factory(...)
+            return runtimeTracker
+        end
+        local loginFrame = SecretsCompassFrame
+        loginFrame.scripts.OnEvent(loginFrame, "ADDON_LOADED", "SecretsCompass")
+        namespace.CreateSecretTracker = factory
+        SlashCmdList.SECRETSCOMPASS("secrets")
+        return SecretsCompassSecrets
+    end
+
+    local function assertResumeDetails(journal, title, step)
+        local controls = journal.controls
+        local visible = title ~= nil
+        local hasSetWaypoint = controls.setWaypoint:IsVisible()
+        local titleInSummary = visible and not hasSetWaypoint
+        assert(controls.pausedRouteTitle:IsVisible() == titleInSummary and controls.pausedStep:IsVisible() == visible
+            and controls.pausedRouteTitle:GetText() == (titleInSummary and title or "")
+            and controls.pausedStep:GetText() == (step or ""),
+            "Resume details use the appropriate route title and saved step")
+        local _, titleX, titleY = journal.routeTitle:GetPoint()
+        local _, progressX, progressY = journal.progress:GetPoint()
+        local _, nameX, nameY = controls.pausedRouteTitle:GetPoint()
+        local _, _, stepY = controls.pausedStep:GetPoint()
+        local _, _, hintY = journal.stepTitle:GetPoint()
+        local _, buttonX, buttonY = controls.continueLast:GetPoint()
+        if visible then
+            assert(stepY - controls.pausedStep:GetHeight() >= hintY
+                and buttonY - controls.continueLast:GetHeight() >= stepY,
+                "Resume details clear the shortcuts and companion hint")
+            if hasSetWaypoint then
+                local _, copyX = controls.copyWaypoint:GetPoint()
+                local _, setX = controls.setWaypoint:GetPoint()
+                assert(journal.routeTitle:GetText() == title
+                    and titleY - journal.routeTitle:GetHeight() >= buttonY
+                    and controls.copyWaypoint:IsVisible() and copyX + controls.copyWaypoint:GetWidth() < setX,
+                    "Three actions fit below the saved route title")
+            else
+                assert(nameY - controls.pausedRouteTitle:GetHeight() >= stepY
+                    and nameX + controls.pausedRouteTitle:GetWidth() < buttonX,
+                    "The saved route name fits beside Continue")
+            end
+            if controls.copyWaypoint:IsVisible() then
+                local _, copyX = controls.copyWaypoint:GetPoint()
+                assert(titleX + journal.routeTitle:GetWidth() < progressX
+                    and progressY - journal.progress:GetHeight() >= buttonY
+                    and buttonX + controls.continueLast:GetWidth() < copyX,
+                    "Copy and Continue fit beside the route name with a separate progress line")
+            else
+                assert(titleY - journal.routeTitle:GetHeight() >= progressY
+                    and progressY - journal.progress:GetHeight() >= nameY
+                    and progressX + journal.progress:GetWidth() < buttonX,
+                    "The route and progress fit above the Continue-only summary")
+            end
+        else
+            assert(journal.routeTitle:GetHeight() == 34 and progressY == -88
+                and journal.progress:GetWidth() == 390 and journal.progress:GetHeight() == 18,
+                "The standard title and progress geometry returns when resume details hide")
+        end
+    end
+
+    local function assertCopyWaypoint(journal, command)
+        local copy = journal.controls.copyWaypoint
+        assert(copy:IsVisible(), "The paused waypoint can be copied")
+        click(copy)
+        local input = journal.controls.mapCommandInput
+        local anchor, _, inputY = input:GetPoint()
+        local _, _, searchY = journal.controls.routeSearch:GetPoint()
+        assert(input:IsVisible() and input.focused and input.highlighted and input:GetText() == command
+            and anchor == "TOPLEFT" and inputY - input:GetHeight() >= searchY
+            and not journal.stepTitle:IsVisible() and not journal.controls.showOnMap:IsVisible()
+            and SecretCompassSecretDB.route == nil,
+            "Copy opens a selected command before search while leaving the route paused")
+        return input
+    end
+
+    local function assertResumeTooltip(journal, expected)
+        local tooltip = GameTooltip
+        GameTooltip = {
+            SetOwner = function(self, owner) self.owner = owner end,
+            AddLine = function(self, value, _, _, _, wrap)
+                self.value, self.wrap = value, wrap
+            end,
+            Show = function(self) self.shown = true end,
+            IsOwned = function(self, owner) return self.owner == owner end,
+            Hide = function(self) self.shown = false end,
+        }
+        local button = journal.controls.continueLast
+        button.scripts.OnEnter(button)
+        assert(GameTooltip.value == expected and (expected == nil or GameTooltip.shown and GameTooltip.wrap),
+            "The wrapped tooltip contains the reveal-approved location summary")
+        button.scripts.OnLeave(button)
+        assert(not GameTooltip.shown, "Leaving Continue dismisses the location tooltip")
+        GameTooltip = tooltip
+    end
+
+    local condor
+    for _, choice in ipairs(namespace.StandaloneSecrets()) do
+        if choice.id == "condor-hatchling" then
+            condor = choice
+        end
+    end
+    assert(condor)
+    local saved = {
+        route = condor, index = 1, locationIndex = 2,
+        reveals = { [condor.id] = "coordinates" },
+    }
+    local journal = reloadJournal(saved)
+    assert(not journal.controls.continueLast:IsVisible(), "The shortcut is hidden during active tracking")
+    assertResumeDetails(journal)
+    click(journal.controls.stop)
+    local bookmark = assert(saved.lastPaused)
+    assert(journal.controls.continueLast:IsVisible(), "Pausing creates the Continue Last Secret shortcut")
+    assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3 · Test Map 1432 (77.7, 74.9)")
+    assert(journal.controls.copyWaypoint:IsVisible() and not journal.controls.setWaypoint:IsVisible()
+        and not journal.controls.showOnMap:IsVisible(),
+        "When native map APIs are unavailable, Copy Waypoint is still available")
+
+    local baseMapPermission, baseSetWaypoint, baseMapPoint = C_Map.CanSetUserWaypointOnMap, C_Map.SetUserWaypoint, UiMapPoint
+    local baseGetWaypoint, baseClearWaypoint = C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint
+    local previousPlayerPin = waypoint
+    local allowed, setterResult, setterThrows = true, true, false
+    local setterEvents, clearMode, unreadablePosition = 1, "clear", nil
+    local permissionCalls, pointCalls, setterCalls, getterCalls, clearCalls = 0, 0, 0, 0, 0
+    local function waypointUpdated()
+        local opened = SecretsCompassSecrets
+        assert(opened.events.USER_WAYPOINT_UPDATED)
+        opened.scripts.OnEvent(opened, "USER_WAYPOINT_UPDATED")
+    end
+    C_Map.GetUserWaypoint = function()
+        getterCalls = getterCalls + 1
+        if unreadablePosition then
+            return { uiMapID = waypoint.uiMapID, position = unreadablePosition }
+        end
+        return waypoint
+    end
+    C_Map.ClearUserWaypoint = function()
+        clearCalls = clearCalls + 1
+        if clearMode == "throw" then
+            error("Mock clear failure")
+        end
+        if clearMode == "clear" then
+            waypoint = nil
+            waypointUpdated()
+        end
+    end
+    C_Map.CanSetUserWaypointOnMap = function(mapID)
+        permissionCalls = permissionCalls + 1
+        assert(mapID == 1432 or mapID == 4)
+        return allowed
+    end
+    UiMapPoint = { CreateFromCoordinates = function(mapID, x, y)
+        pointCalls = pointCalls + 1
+        return { uiMapID = mapID, position = CreateVector2D(x, y) }
+    end }
+    C_Map.SetUserWaypoint = function(point)
+        setterCalls = setterCalls + 1
+        if setterThrows then
+            error("Mock setter failure")
+        end
+        if setterResult == true then
+            waypoint = point
+            for _ = 1, setterEvents do
+                waypointUpdated()
+            end
+        end
+        return setterResult
+    end
+    local function assertSetWaypoint(journal, expectedMap, x, y)
+        local button = journal.controls.setWaypoint
+        local savedBookmark, savedNavigation = saved.lastPaused, saved.navigation
+        local beforePermission, beforeCreate, beforeSet = permissionCalls, pointCalls, setterCalls
+        assert(button:IsVisible() and button:GetText() == "Set Waypoint")
+        click(button)
+        assert(permissionCalls == beforePermission + 1 and pointCalls == beforeCreate + 1
+            and setterCalls == beforeSet + 1 and waypoint.uiMapID == expectedMap
+            and math.abs(waypoint.position.x - x) < 0.000001 and math.abs(waypoint.position.y - y) < 0.000001,
+            "Clicking Set Waypoint places the exact saved normalized point")
+        assert(journal.stepTitle:IsVisible() and journal.stepTitle:GetText() == "Waypoint set on the World Map."
+            and not journal.controls.mapCommandInput:IsVisible() and not journal.controls.mapCommandInput.focused
+            and saved.route == nil and saved.lastPaused == savedBookmark and saved.navigation == savedNavigation,
+            "Set Waypoint closes Copy and preserves the paused route and navigation preference")
+    end
+
+    local originalOpenWorldMap, originalWorldMapFrame = C_Map.OpenWorldMap, WorldMapFrame
+    local mapOpens, shownMap, mapShown, mapOpenMode = {}, nil, false, "confirm"
+    local canvas = region(UIParent)
+    canvas:SetSize(1000, 500)
+    local camera = { viewport = region(UIParent), pans = {}, scale = 1.25, maxZoom = 2.5 }
+    camera.viewport:SetSize(446, 251)
+    WorldMapFrame = {
+        IsShown = function() return mapShown end,
+        GetMapID = function() return shownMap end,
+        GetCanvas = function() return canvas end,
+        GetCanvasContainer = function() return camera.viewport end,
+        GetCanvasScale = function() return camera.scale end,
+        GetScaleForMaxZoom = function() return camera.maxZoom end,
+        InstantPanAndZoom = function(self, scale, x, y, userAction)
+            assert(self == WorldMapFrame)
+            camera.pans[#camera.pans + 1] = { scale, x, y, userAction }
+            if camera.throws then
+                error("Mock camera failure")
+            end
+        end,
+    }
+    local function assertPan(before, scale, x, y)
+        local pan = camera.pans[#camera.pans]
+        assert(#camera.pans == before + 1 and math.abs(pan[1] - scale) < 0.000001
+            and pan[2] == x and pan[3] == y and pan[4] == true,
+            "The native camera receives the expected scale and normalized saved point exactly once")
+    end
+    local function openWorldMap(mapID)
+        mapOpens[#mapOpens + 1] = mapID
+        if mapOpenMode == "throw" then
+            error("Mock map open failure")
+        elseif mapOpenMode == "confirm" then
+            shownMap, mapShown = mapID, true
+        end
+    end
+    C_Map.OpenWorldMap = openWorldMap
+    local function assertMapMarker(marker, x, y)
+        local point, relativeTo, relativePoint, offsetX, offsetY = marker:GetPoint()
+        assert(marker:IsVisible() and marker:GetParent() == canvas and not marker.mouseEnabled
+            and #marker.lines == 8 and point == "CENTER" and relativeTo == canvas and relativePoint == "TOPLEFT"
+            and math.abs(offsetX - x * canvas:GetWidth()) < 0.000001
+            and math.abs(offsetY + y * canvas:GetHeight()) < 0.000001,
+            "The outlined, noninteractive marker anchors at the saved fractions on the panning canvas")
+    end
+
+    local function assertShowOnMap(opened, expectedMap, x, y)
+        local action = opened.controls.showOnMap
+        local reads, sets, clears = getterCalls, setterCalls, clearCalls
+        local bookmark, navigation, pin = saved.lastPaused, saved.navigation, waypoint
+        local clearWasVisible = opened.controls.clearWaypoint:IsVisible()
+        local before = #mapOpens
+        local _, actionX, actionY = action:GetPoint()
+        local _, hintX = opened.stepTitle:GetPoint()
+        assert(action:IsVisible() and action:GetText() == "Show on Map"
+            and hintX + opened.stepTitle:GetWidth() < actionX and actionY == -117,
+            "Show on Map fits beside the journal hint")
+        click(action)
+        assert(#mapOpens == before + 1 and mapOpens[#mapOpens] == expectedMap and not opened:IsShown(),
+            "Only a confirmed open to the precise saved map dismisses the journal")
+        SlashCmdList.SECRETSCOMPASS("secrets")
+        assert(opened:IsShown() and opened.controls.clearWaypoint:IsVisible() == clearWasVisible
+            and getterCalls == reads and setterCalls == sets and clearCalls == clears and waypoint == pin
+            and saved.route == nil and saved.lastPaused == bookmark and saved.navigation == navigation,
+            "Showing the map does not alter the player pin, journal ownership, or route")
+        local marker = opened.savedMapMarker
+        if x then
+            assertMapMarker(assert(marker), x, y)
+        else
+            assert(not marker or not marker:IsVisible(), "Map opening still works when the marker cannot draw")
+        end
+        return marker
+    end
+
+    saved.lastPaused = nil
+    journal = reloadJournal(saved)
+    assert(not journal.controls.continueLast:IsVisible()
+        and journal.controls.routes[condor.id].action:GetText() == "Resume · Step 1",
+        "A legacy checkpoint remains resumable without inventing a most recently paused route")
+    assertResumeDetails(journal)
+    saved.lastPaused = { id = "missing-route" }
+    journal = reloadJournal(saved)
+    assert(not journal.controls.continueLast:IsVisible(), "An unresolved bookmark hides the shortcut")
+    assertResumeDetails(journal)
+
+    saved.lastPaused = bookmark
+    journal = reloadJournal(saved)
+    journal.controls.routeSearch:SetText("no matching secret")
+    local shortcut = journal.controls.continueLast
+    assert(shortcut:IsVisible() and shortcut:GetText() == "Continue Last Secret"
+        and journal.controls.routeEmpty:IsVisible(), "The restored shortcut is independent of browse filters")
+    local condorSummary = "Step 1 of 1 · Location 2 of 3 · Test Map 1432 (77.7, 74.9)"
+    assertResumeDetails(journal, condor.title, condorSummary)
+    assertResumeTooltip(journal, condorSummary)
+    local showOnMap = journal.controls.showOnMap
+    local copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    click(showOnMap)
+    assert(#mapOpens == 0, "The hidden map action cannot run behind the copy field")
+    C_Map.OpenWorldMap = nil
+    copyInput.scripts.OnEscapePressed(copyInput)
+    assert(not showOnMap:IsVisible() and journal.stepTitle:GetWidth() == 388,
+        "Closing Copy restores the correct layout when map opening becomes unavailable")
+    C_Map.OpenWorldMap = openWorldMap
+    journal.controls.routeSearch:SetText("no matching secret")
+    local marker = assertShowOnMap(journal, 1432, 0.777, 0.749)
+    assertPan(0, 1.25, 0.777, 0.749)
+    canvas:SetSize(900, 700)
+    marker.scripts.OnUpdate(marker, 5)
+    assert(#camera.pans == 1, "Resizing and maintaining the marker does not move the camera")
+    assertMapMarker(marker, 0.777, 0.749)
+    marker.scripts.OnUpdate(marker, 9.5)
+    assert(marker:IsVisible(), "The marker remains visible before its lifetime ends")
+    marker.scripts.OnUpdate(marker, 0.5)
+    assert(not marker:IsShown() and not marker.scripts.OnUpdate, "The marker expires and stops updating at 15 seconds")
+
+    camera.viewport:SetSize(601, 702.8)
+    assert(assertShowOnMap(journal, 1432, 0.777, 0.749) == marker, "Repeated opens reuse the same marker")
+    assertPan(1, 2.0, 0.777, 0.749)
+    shownMap = 1
+    marker.scripts.OnUpdate(marker, 0)
+    assert(not marker:IsShown() and not marker.scripts.OnUpdate and #camera.pans == 2,
+        "Changing maps removes the marker without moving the camera")
+
+    camera.throws = true
+    assertShowOnMap(journal, 1432, 0.777, 0.749)
+    assertPan(2, 2.0, 0.777, 0.749)
+    assertMapMarker(marker, 0.777, 0.749)
+    camera.throws = false
+    canvas:Hide()
+    marker.scripts.OnHide(marker)
+    canvas:Show()
+    assert(not marker:IsShown() and not marker.scripts.OnUpdate, "Closing the canvas removes the marker immediately")
+
+    assertShowOnMap(journal, 1432, 0.777, 0.749)
+    saved.reveals[condor.id] = "distance"
+    journal.controls.routeSearch:SetText("no matching secret")
+    assert(not marker:IsShown() and not marker.scripts.OnUpdate, "A lower reveal level clears the marker on journal refresh")
+    saved.reveals[condor.id] = "coordinates"
+    journal.controls.routeSearch:SetText("no matching secret")
+
+    local getCanvas, nativePan = WorldMapFrame.GetCanvas, WorldMapFrame.InstantPanAndZoom
+    camera.pansBeforeFallback = #camera.pans
+    WorldMapFrame.GetCanvas = nil
+    assertShowOnMap(journal, 1432)
+    assert(#camera.pans == camera.pansBeforeFallback, "No marker means no camera movement")
+    WorldMapFrame.GetCanvas = getCanvas
+
+    WorldMapFrame.InstantPanAndZoom = nil
+    assertShowOnMap(journal, 1432, 0.777, 0.749)
+    assert(#camera.pans == camera.pansBeforeFallback, "The marker still draws without a native camera method")
+    WorldMapFrame.InstantPanAndZoom = nativePan
+
+    assertShowOnMap(journal, 1432, 0.777, 0.749)
+    camera.pansBeforeInvalidMap = #camera.pans
+    mapOpenMode = "throw"
+    click(showOnMap)
+    assert(journal:IsShown() and journal.stepTitle:GetText() == "Could not open the saved map."
+        and not marker:IsShown() and not marker.scripts.OnUpdate,
+        "A native map-open error is reported and removes the previous marker")
+    mapOpenMode, shownMap, mapShown = "unconfirmed", 1, true
+    journal.controls.routeSearch:SetText("no matching secret")
+    local originalHint = journal.stepTitle:GetText()
+    click(showOnMap)
+    assert(journal:IsShown() and journal.stepTitle:GetText() == originalHint,
+        "A void call showing another map leaves the journal open")
+    shownMap, mapShown = 1432, secret
+    click(showOnMap)
+    assert(journal:IsShown() and journal.stepTitle:GetText() == originalHint,
+        "An unreadable shown state cannot confirm the map")
+    shownMap, mapShown = secret, true
+    click(showOnMap)
+    assert(journal:IsShown() and journal.stepTitle:GetText() == originalHint,
+        "An unreadable map ID cannot confirm the map")
+
+    saved.reveals[condor.id] = "distance"
+    local openCount = #mapOpens
+    click(showOnMap)
+    assert(#mapOpens == openCount and not showOnMap:IsVisible() and #camera.pans == camera.pansBeforeInvalidMap,
+        "Stale reveal or invalid maps never move the camera")
+    saved.reveals[condor.id] = "coordinates"
+    mapOpenMode = "confirm"
+    journal.controls.routeSearch:SetText("no matching secret")
+    copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    assert(permissionCalls == 0 and pointCalls == 0 and setterCalls == 0 and getterCalls == 0
+        and not journal.controls.clearWaypoint:IsVisible() and waypoint == previousPlayerPin,
+        "Opening, filtering and copying do not touch the player map pin")
+
+    assertSetWaypoint(journal, 1432, 0.777, 0.749)
+    local clear = journal.controls.clearWaypoint
+    assert(clear:IsVisible() and journal.controls.continueLast:GetText() == "Continue"
+        and getterCalls == 1, "One synchronous update and a matching read enable Clear")
+    assertShowOnMap(journal, 1432, 0.777, 0.749)
+    assertResumeDetails(journal, condor.title, condorSummary)
+    local _, setX = journal.controls.setWaypoint:GetPoint()
+    local _, clearX = clear:GetPoint()
+    assert(setX + journal.controls.setWaypoint:GetWidth() < clearX, "The fourth action fits beside Set")
+
+    local originalBookmark = saved.lastPaused
+    local samePointURL = "https://example.com/same-point"
+    local samePoint = namespace.NormalizeSecretRoute({
+        id = "secret-checklist:" .. samePointURL, sourceURL = samePointURL, title = "Another Guide",
+        steps = { { title = "Visit the spot", waypoints = { condor.steps[1].waypoints[2] } } },
+    })
+    saved.lastPaused = { id = samePoint.id, sourceURL = samePoint.sourceURL, route = samePoint, index = 1, locationIndex = 1 }
+    saved.reveals[samePoint.id] = "coordinates"
+    click(clear)
+    assert(not clear:IsVisible() and clearCalls == 0 and getterCalls == 1,
+        "A different saved route at the same coordinates cannot clear the journal pin")
+    saved.lastPaused, saved.reveals[samePoint.id] = originalBookmark, nil
+    journal.controls.routeSearch:SetText("no matching secret")
+    assert(clear:IsVisible(), "The original bookmark can still clear its verified pin")
+
+    clearMode = "noop"
+    click(clear)
+    assert(clearCalls == 1 and clear:IsVisible()
+        and journal.stepTitle:GetText() == "Could not clear the World Map waypoint.",
+        "A silent failed clear does not claim success and can retry a verified unchanged pin")
+    clearMode = "clear"
+    local pausedBookmark, pausedNavigation = saved.lastPaused, saved.navigation
+    click(clear)
+    assert(clearCalls == 2 and waypoint == nil and not clear:IsVisible()
+        and journal.stepTitle:GetText() == "Waypoint cleared from the World Map."
+        and saved.route == nil and saved.lastPaused == pausedBookmark and saved.navigation == pausedNavigation,
+        "An explicit clear verifies the map pin is absent and leaves the secret paused")
+
+    assertSetWaypoint(journal, 1432, 0.777, 0.749)
+    waypoint = { uiMapID = 1432, position = CreateVector2D(0.777, 0.749) }
+    waypointUpdated()
+    click(clear)
+    assert(not clear:IsVisible() and clearCalls == 2 and waypoint,
+        "An external update revokes even an identical replacement")
+
+    assertSetWaypoint(journal, 1432, 0.777, 0.749)
+    waypoint = { uiMapID = 1432, position = CreateVector2D(0.778, 0.749) }
+    local foreignPin = waypoint
+    click(clear)
+    assert(not clear:IsVisible() and clearCalls == 2 and waypoint == foreignPin
+        and journal.stepTitle:GetText() == "The journal waypoint could not be verified.",
+        "An unannounced coordinate change is detected before any clear call")
+
+    for _, events in ipairs({ 0, 2 }) do
+        setterEvents = events
+        local beforeReads = getterCalls
+        assertSetWaypoint(journal, 1432, 0.777, 0.749)
+        assert(not clear:IsVisible() and getterCalls == beforeReads,
+            "Zero or multiple waypoint updates leave the new ownership unverified")
+    end
+    setterEvents = 1
+    unreadablePosition = secret
+    assertSetWaypoint(journal, 1432, 0.777, 0.749)
+    assert(not clear:IsVisible(), "An unreadable observed position cannot establish ownership")
+    unreadablePosition = nil
+
+    assertSetWaypoint(journal, 1432, 0.777, 0.749)
+    clearMode = "throw"
+    click(clear)
+    assert(clearCalls == 3 and not clear:IsVisible() and waypoint
+        and journal.stepTitle:GetText() == "Could not clear the World Map waypoint.",
+        "An error is contained and revokes uncertain ownership")
+    clearMode = "clear"
+
+    local savedPin, beforeCreate, beforeSet = waypoint, pointCalls, setterCalls
+    allowed = false
+    click(journal.controls.setWaypoint)
+    assert(journal.stepTitle:GetText() == "This map does not support World Map waypoints."
+        and pointCalls == beforeCreate and setterCalls == beforeSet and waypoint == savedPin,
+        "Unsupported maps do not construct or place a waypoint")
+    allowed = true
+    for _, rejected in ipairs({ false, secret }) do
+        setterResult = rejected
+        click(journal.controls.setWaypoint)
+        assert(journal.stepTitle:GetText() == "Could not set the World Map waypoint." and waypoint == savedPin)
+    end
+    setterResult = nil
+    click(journal.controls.setWaypoint)
+    assert(journal.stepTitle:GetText() == "Could not set the World Map waypoint." and waypoint == savedPin,
+        "A nil native return does not claim success")
+    setterThrows = true
+    click(journal.controls.setWaypoint)
+    assert(journal.stepTitle:GetText() == "Could not set the World Map waypoint." and waypoint == savedPin,
+        "A native error does not escape or claim success")
+    setterThrows, setterResult = false, true
+
+    copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    journal.controls.routeSearch:SetText("nothing matches")
+    assert(copyInput:IsVisible() and copyInput:GetText() == "/mappin 1432 77.70 74.90",
+        "Refreshing the same built-in waypoint keeps its copy field")
+    copyInput.scripts.OnEscapePressed(copyInput)
+    assert(not copyInput:IsVisible() and not copyInput.focused and copyInput:GetText() == ""
+        and journal.stepTitle:IsVisible(), "Escape closes Copy Waypoint and restores the journal hint")
+    copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    saved.reveals[condor.id] = "distance"
+    local oldPermissionCalls = permissionCalls
+    click(journal.controls.setWaypoint)
+    assert(journal.stepTitle:GetText() == "World Map waypoint unavailable."
+        and permissionCalls == oldPermissionCalls and waypoint == savedPin,
+        "A stale Set action rechecks the reveal level before using the map API")
+    journal.controls.routeSearch:SetText("")
+    assert(not copyInput:IsVisible() and not copyInput.focused and copyInput:GetText() == ""
+        and not journal.controls.copyWaypoint:IsVisible() and journal.stepTitle:IsVisible(),
+        "A reveal change clears the stale command and copy control")
+    saved.reveals[condor.id] = "coordinates"
+    journal.controls.routeSearch:SetText("no matching secret")
+    copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    journal.scripts.OnHide(journal)
+    assert(not copyInput:IsVisible() and not copyInput.focused and copyInput:GetText() == "",
+        "Closing the journal clears the paused command")
+    copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    click(shortcut)
+    assert(not copyInput:IsVisible() and not copyInput.focused and copyInput:GetText() == ""
+        and not journal.controls.copyWaypoint:IsVisible() and journal.stepTitle:IsVisible(),
+        "Continuing clears the paused copy field and restores the active instructions")
+    assertResumeDetails(journal)
+    assert(saved.route.id == condor.id and saved.index == 1 and saved.locationIndex == 2
+        and journal.progress:GetText():find("Location 2 of 3", 1, true) and not shortcut:IsVisible(),
+        "Continuing a built-in route restores its exact step and alternate location")
+    click(journal.controls.mapCommand)
+    assert(journal.controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90"
+        and journal.controls.mapCommandInput:GetPoint() == "BOTTOMLEFT",
+        "The active map command uses its original footer")
+    for _, reveal in ipairs({ "distance", "clue" }) do
+        assert(runtimeTracker:SetReveal(reveal))
+        click(journal.controls.stop)
+        assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
+        assertResumeTooltip(journal)
+        assert(not journal.controls.copyWaypoint:IsVisible() and not journal.controls.setWaypoint:IsVisible()
+            and not journal.controls.clearWaypoint:IsVisible() and not journal.controls.showOnMap:IsVisible(),
+            "Low reveal levels hide all waypoint actions")
+        click(journal.controls.continueLast)
+    end
+
+    local guideURL = "https://example.com/duplicate-title"
+    local imported = {
+        id = "secret-checklist:" .. guideURL, sourceURL = guideURL, title = condor.title,
+        steps = {
+            { title = "Find the lead", waypoints = { { mapID = 1, x = 0.25, y = 0.30 } } },
+            { title = "Find the lead", waypoints = {
+                { mapID = 1, x = 0.32, y = 0.40 },
+                { mapID = 4, x = 0.10, y = 0.20 },
+            } },
+        },
+    }
+    assert(runtimeTracker:Track(imported))
+    runtimeTracker:SetReveal("coordinates")
+    click(journal.controls.stop)
+    assertResumeDetails(journal, imported.title, "Step 1 of 2")
+    copyInput = assertCopyWaypoint(journal, "/mappin 1 25.00 30.00")
+    copyInput.scripts.OnEnterPressed(copyInput)
+    assert(not copyInput:IsVisible() and not copyInput.focused and journal.stepTitle:IsVisible(),
+        "Enter closes the selectable command for a single mapped waypoint")
+    click(journal.controls.continueLast)
+    assert(runtimeTracker:Jump(2) and runtimeTracker:CycleLocation())
+    runtimeTracker:SetReveal("full")
+    local getMapInfo = C_Map.GetMapInfo
+    C_Map.GetMapInfo = function(mapID)
+        if mapID ~= 4 then
+            return getMapInfo(mapID)
+        end
+    end
+    click(journal.controls.stop)
+    assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2")
+    SecretChecklist = nil
+    journal = reloadJournal(saved)
+    assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2")
+    assertResumeTooltip(journal)
+    copyInput = assertCopyWaypoint(journal, "/mappin 4 10.00 20.00")
+    assertSetWaypoint(journal, 4, 0.10, 0.20)
+    assert(journal.controls.clearWaypoint:IsVisible(), "Imported waypoints can be owned even when the map name is unknown")
+    camera.pansBeforeImport = #camera.pans
+    local importedMarker = assertShowOnMap(journal, 4, 0.10, 0.20)
+    assertPan(camera.pansBeforeImport, camera.maxZoom, 0.10, 0.20)
+    local importedPoint = saved.lastPaused.route.steps[2].waypoints[2]
+    importedPoint.x = 0.1000001
+    journal.controls.routeSearch:SetText("no matching secret")
+    assert(not importedMarker:IsShown() and not importedMarker.scripts.OnUpdate,
+        "A changed saved point clears the marker even if its rounded map command is identical")
+    camera.viewport:SetSize(120, 120)
+    importedPoint.x = 0
+    journal.controls.routeSearch:SetText("")
+    assertShowOnMap(journal, 4, 0, 0.20)
+    assertPan(camera.pansBeforeImport + 1, camera.maxZoom, 0, 0.20)
+    importedPoint.x = 0.10
+    journal.controls.routeSearch:SetText("no matching secret")
+    local readsBeforeReload, importedPin = getterCalls, waypoint
+    C_Map.GetMapInfo = getMapInfo
+    journal = reloadJournal(saved)
+    assert(not journal.controls.clearWaypoint:IsVisible() and getterCalls == readsBeforeReload and waypoint == importedPin,
+        "A reload does not claim or read the existing map pin")
+    assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2 · Test Map 4 (10.0, 20.0)")
+    click(journal.controls.continueLast)
+    assertResumeDetails(journal)
+    assert(saved.route.id == imported.id and saved.route.title == condor.title and saved.index == 2
+        and saved.locationIndex == 2 and journal.progress:GetText():find("Location 2 of 2", 1, true),
+        "The most recent imported route survives reload without SecretChecklist and is matched by identity")
+    click(journal.controls.mapCommand)
+    assert(journal.controls.mapCommandInput:GetText() == "/mappin 4 10.00 20.00",
+        "The imported guide's exact alternate location is usable after reload")
+    click(journal.controls.next)
+    assert(saved.route == nil and saved.lastPaused == nil and not journal.controls.continueLast:IsVisible(),
+        "Finishing the continued route clears the saved shortcut")
+    assertResumeDetails(journal)
+    C_Map.CanSetUserWaypointOnMap, C_Map.SetUserWaypoint, UiMapPoint = baseMapPermission, baseSetWaypoint, baseMapPoint
+    C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint = baseGetWaypoint, baseClearWaypoint
+    C_Map.OpenWorldMap, WorldMapFrame = originalOpenWorldMap, originalWorldMapFrame
+    waypoint = previousPlayerPin
 end
 
 print("SecretsCompass mocks passed: secret-only tracking, HUD controls, categorized standalone secrets, spoiler levels, verified progress, the SecretChecklist companion, and external waypoint navigation")

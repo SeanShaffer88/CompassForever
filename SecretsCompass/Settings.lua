@@ -53,6 +53,7 @@ local function makePreview(parent)
     artwork:SetSize(1, 1)
     artwork:SetPoint("CENTER")
     local sample = { artwork = artwork, arc = {}, ticks = {}, details = {}, heading = {} }
+    sample.stylePlate = artwork:CreateTexture(nil, "BACKGROUND", nil, -1)
     for index = 1, 40 do
         sample.arc[index] = line(artwork, 0, 0, 0, 0)
     end
@@ -80,6 +81,7 @@ end
 local function positionPreview(sample, style, api)
     local art = sample.artwork
     local r, g, b = unpack(style.arc)
+    namespace.PositionCompassStylePlate(sample.stylePlate, art, style, previewScale, previewBaseline)
     local function yAt(x)
         return previewBaseline + api.styleY(style.id, x / previewHalfWidth) * previewScale
     end
@@ -125,7 +127,8 @@ local function positionPreview(sample, style, api)
         place(stroke, x1 * previewScale, previewBaseline + y1 * previewScale,
             x2 * previewScale, previewBaseline + y2 * previewScale)
         stroke:SetThickness(math.max(1, (width or 1) * previewScale))
-        stroke:SetColorTexture(r, g, b, alpha or 0.45)
+        local detailR, detailG, detailB = unpack(segment[7] or style.arc)
+        stroke:SetColorTexture(detailR, detailG, detailB, alpha or 0.45)
         stroke:Show()
     end
     for index = #detailSegments + 1, #details do

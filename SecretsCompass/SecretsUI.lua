@@ -5,7 +5,7 @@ local journalTitle = "SecretsCompass Journal"
 local portraitPath = "Interface\\AddOns\\" .. addonName .. "\\Media\\MinimapCompass.tga"
 local journalHeight = 471
 local routeRowHeight, routeHeadingHeight = 30, 24
-local browseToolbarHeight = 34
+local browseToolbarHeight = 50
 local routeListTop, routeFrameHeight, routePagerHeight = 157 + browseToolbarHeight, 201 + browseToolbarHeight, 30
 local routePageInset = 10
 local categoryOrder = {
@@ -21,6 +21,11 @@ for index, category in ipairs(categoryOrder) do
     routeCategories[category.key] = category
 end
 local otherCategory = { key = "other", order = #categoryOrder + 1, label = "Other Secrets", icon = "INV_Misc_QuestionMark" }
+local statusOptions = {
+    all = { label = "All", next = "completed" },
+    completed = { label = "Completed", next = "unfinished" },
+    unfinished = { label = "Unfinished", next = "all" },
+}
 local gold = { 0.96, 0.78, 0.43 }
 local muted = { 0.73, 0.67, 0.55 }
 local finishedColor = { 0.68, 0.76, 0.48 }
@@ -92,7 +97,7 @@ local function routeRow(parent, route, y, onClick)
     return row
 end
 
-local function waypointZone(waypoint)
+local function waypointZone(waypoint, knownOnly)
     if not waypoint then
         return
     end
@@ -104,12 +109,19 @@ local function waypointZone(waypoint)
         end
     end
     if (issecretvalue and issecretvalue(zone)) or type(zone) ~= "string" or zone == "" then
+        if knownOnly then
+            return
+        end
         zone = "Map " .. waypoint.mapID
     end
     return zone
 end
 
 namespace.SecretWaypointZone = waypointZone
+
+local function coordinatesText(waypoint)
+    return ("%.1f, %.1f"):format(waypoint.x * 100, waypoint.y * 100)
+end
 
 local function waypointText(waypoint, reveal, bearingAvailable)
     local zone = waypointZone(waypoint)
@@ -119,7 +131,7 @@ local function waypointText(waypoint, reveal, bearingAvailable)
     if reveal ~= "coordinates" and reveal ~= "full" then
         return not bearingAvailable and ("Destination: " .. zone) or ""
     end
-    local coordinates = ("%.1f, %.1f"):format(waypoint.x * 100, waypoint.y * 100)
+    local coordinates = coordinatesText(waypoint)
     if reveal == "full" and waypoint.label and waypoint.label ~= "" then
         return ("%s · %s (%s)"):format(waypoint.label, zone, coordinates)
     end
@@ -141,8 +153,294 @@ local function mapCommandText(waypoint)
         math.floor(x / 100), x % 100, math.floor(y / 100), y % 100)
 end
 
+local function savedWaypoint(route, index, location, reveal)
+    local step = route and route.steps[index]
+    local waypoint = step and step.waypoints[location]
+    if canShowMapCommand(waypoint, reveal) then
+        return waypoint
+    end
+end
+
+local function supportsWorldMapWaypoint()
+    return C_Map ~= nil and UiMapPoint ~= nil
+        and type(C_Map.CanSetUserWaypointOnMap) == "function"
+        and type(UiMapPoint.CreateFromCoordinates) == "function"
+        and type(C_Map.SetUserWaypoint) == "function"
+end
+
+local function supportsClearWorldMapWaypoint()
+    return C_Map ~= nil and type(C_Map.GetUserWaypoint) == "function"
+        and type(C_Map.ClearUserWaypoint) == "function"
+end
+
+local function readable(value)
+    return not (issecretvalue and issecretvalue(value))
+end
+
+local function supportsOpenWorldMap()
+    return C_Map ~= nil and type(C_Map.OpenWorldMap) == "function"
+end
+
+local function worldMapShows(mapID)
+    local map = WorldMapFrame
+    if not readable(map) or not map then
+        return false
+    end
+    local ok, currentMap = pcall(function()
+        local shown = map:IsShown()
+        if readable(shown) and shown == true then
+            return map:GetMapID()
+        end
+    end)
+    return ok and readable(currentMap) and type(currentMap) == "number" and currentMap == mapID
+end
+
+local function hideSavedMapMarker(marker)
+    if marker then
+        marker.selection, marker.waypointSnapshot = nil, nil
+        marker:SetScript("OnUpdate", nil)
+        marker:Hide()
+    end
+end
+
+local function positiveFinite(value)
+    return readable(value) and type(value) == "number" and value > 0 and value < math.huge
+end
+
+local function positionSavedMapMarker(marker, waypoint)
+    local canvas = marker:GetParent()
+    local ok, width, height = pcall(function() return canvas:GetWidth(), canvas:GetHeight() end)
+    if not ok or not positiveFinite(width) or not positiveFinite(height) then
+        return false
+    end
+    if marker.canvasWidth ~= width or marker.canvasHeight ~= height then
+        marker:ClearAllPoints()
+        marker:SetPoint("CENTER", canvas, "TOPLEFT", waypoint.x * width, -waypoint.y * height)
+        marker.canvasWidth, marker.canvasHeight = width, height
+    end
+    return true
+end
+
+local function updateSavedMapMarker(marker, elapsed)
+    marker.remaining = marker.remaining - elapsed
+    local waypoint = marker.waypointSnapshot
+    if marker.remaining <= 0 or marker.map ~= WorldMapFrame or not worldMapShows(waypoint.mapID)
+        or not positionSavedMapMarker(marker, waypoint) then
+        hideSavedMapMarker(marker)
+    end
+end
+
+local function createSavedMapMarker(canvas)
+    local marker = CreateFrame("Frame", nil, canvas)
+    marker:Hide()
+    marker:EnableMouse(false)
+    marker:SetSize(28, 28)
+    local corners = { { 0, 11 }, { 11, 0 }, { 0, -11 }, { -11, 0 } }
+    for _, stroke in ipairs({
+        { "ARTWORK", 5, 0.11, 0.07, 0.15 },
+        { "OVERLAY", 2, 0.85, 0.68, 1 },
+    }) do
+        for i, corner in ipairs(corners) do
+            local nextCorner = corners[i % #corners + 1]
+            local line = marker:CreateLine(nil, stroke[1])
+            line:SetThickness(stroke[2])
+            line:SetColorTexture(stroke[3], stroke[4], stroke[5], 1)
+            line:SetStartPoint("CENTER", marker, corner[1], corner[2])
+            line:SetEndPoint("CENTER", marker, nextCorner[1], nextCorner[2])
+        end
+    end
+    marker:SetScript("OnHide", function(self)
+        self.selection, self.waypointSnapshot = nil, nil
+        self:SetScript("OnUpdate", nil)
+        -- An ancestor may hide the marker while its own shown flag is still set.
+        if self:IsShown() then
+            self:Hide()
+        end
+    end)
+    return marker
+end
+
+local function centerSavedMapMarker(marker)
+    local map = marker.map
+    if type(map.InstantPanAndZoom) ~= "function" then
+        return
+    end
+    local scale, maxScale = map:GetCanvasScale(), map:GetScaleForMaxZoom()
+    if not positiveFinite(scale) or not positiveFinite(maxScale) or scale > maxScale then
+        return
+    end
+    local viewport = map:GetCanvasContainer()
+    if not readable(viewport) or not viewport then
+        return
+    end
+    local width, height = viewport:GetWidth(), viewport:GetHeight()
+    if not positiveFinite(width) or not positiveFinite(height) then
+        return
+    end
+
+    local waypoint = marker.waypointSnapshot
+    -- Centering needs half the viewport to fit between the point and each nearest edge.
+    local xClearance = math.min(waypoint.x, 1 - waypoint.x)
+    local yClearance = math.min(waypoint.y, 1 - waypoint.y)
+    local requiredScale = maxScale
+    if xClearance > 0 and yClearance > 0 then
+        requiredScale = math.max(width / (2 * marker.canvasWidth * xClearance),
+            height / (2 * marker.canvasHeight * yClearance))
+    end
+    local targetScale = math.max(scale, math.min(maxScale, requiredScale))
+    map:InstantPanAndZoom(targetScale, waypoint.x, waypoint.y, true)
+end
+
+local function showSavedMapMarker(panel, selection)
+    local map = WorldMapFrame
+    local canvas = map:GetCanvas()
+    if not readable(canvas) or not canvas or not canvas:IsVisible() then
+        return
+    end
+    local marker = panel.savedMapMarker
+    if not marker then
+        marker = createSavedMapMarker(canvas)
+        panel.savedMapMarker = marker
+    elseif marker:GetParent() ~= canvas then
+        marker:SetParent(canvas)
+    end
+    marker.canvasWidth = nil
+    local waypoint = selection.waypoint
+    if positionSavedMapMarker(marker, waypoint) then
+        marker.waypointSnapshot = { mapID = waypoint.mapID, x = waypoint.x, y = waypoint.y }
+        marker.selection, marker.map, marker.remaining = selection, map, 15
+        marker:Show()
+        marker:SetScript("OnUpdate", updateSavedMapMarker)
+        if marker:IsVisible() then
+            pcall(centerSavedMapMarker, marker)
+        end
+    end
+end
+
+local function normalizedCoordinate(value)
+    return readable(value) and type(value) == "number" and value >= 0 and value <= 1
+end
+
+local function currentWorldMapWaypoint()
+    local ok, point = pcall(C_Map.GetUserWaypoint)
+    if not ok or not readable(point) then
+        return false
+    end
+    if point == nil then
+        return true
+    end
+    if type(point) ~= "table" then
+        return false
+    end
+    local fieldsOK, mapID, position = pcall(function() return point.uiMapID, point.position end)
+    if not fieldsOK or not readable(mapID) or type(mapID) ~= "number"
+        or mapID <= 0 or mapID >= math.huge or mapID ~= math.floor(mapID)
+        or not readable(position) or type(position) ~= "table" then
+        return false
+    end
+    local positionOK, x, y = pcall(function() return position:GetXY() end)
+    if not positionOK or not normalizedCoordinate(x) or not normalizedCoordinate(y) then
+        return false
+    end
+    return true, { mapID = mapID, x = x, y = y }
+end
+
+local function sameWorldMapWaypoint(a, b)
+    return a and b and a.mapID == b.mapID
+        and math.abs(a.x - b.x) <= 0.000001 and math.abs(a.y - b.y) <= 0.000001
+end
+
+local function mutateWorldMapWaypoint(panel, action, ...)
+    panel.waypointUpdateCount = 0
+    local ok, result = pcall(action, ...)
+    local updates = panel.waypointUpdateCount
+    panel.waypointUpdateCount = nil
+    return ok, result, updates
+end
+
+local function setWorldMapWaypoint(panel, selection)
+    local waypoint = selection and selection.waypoint
+    if not waypoint or not supportsWorldMapWaypoint() then
+        return "World Map waypoint unavailable."
+    end
+    local checked, allowed = pcall(C_Map.CanSetUserWaypointOnMap, waypoint.mapID)
+    if not checked or (issecretvalue and issecretvalue(allowed)) then
+        return "Could not set the World Map waypoint."
+    end
+    if allowed ~= true then
+        return "This map does not support World Map waypoints."
+    end
+    local created, point = pcall(UiMapPoint.CreateFromCoordinates, waypoint.mapID, waypoint.x, waypoint.y)
+    if not created or (issecretvalue and issecretvalue(point)) or type(point) ~= "table" then
+        return "Could not set the World Map waypoint."
+    end
+    panel.ownedWorldMapWaypoint = nil
+    local called, placed, updates = mutateWorldMapWaypoint(panel, C_Map.SetUserWaypoint, point)
+    if called and readable(placed) and placed == true then
+        if updates == 1 and supportsClearWorldMapWaypoint() then
+            local generation = panel.waypointGeneration
+            local observed, current = currentWorldMapWaypoint()
+            if observed and generation == panel.waypointGeneration and sameWorldMapWaypoint(waypoint, current) then
+                panel.ownedWorldMapWaypoint = { selection = selection, point = current }
+            end
+        end
+        return "Waypoint set on the World Map."
+    end
+    return "Could not set the World Map waypoint."
+end
+
+local function savedMapCommand(route, index, location, reveal)
+    local waypoint = savedWaypoint(route, index, location, reveal)
+    if waypoint then
+        return {
+            id = route.id, sourceURL = route.sourceURL, index = index, location = location,
+            reveal = reveal, command = mapCommandText(waypoint), waypoint = waypoint,
+        }
+    end
+end
+
+local function sameSavedMapCommand(previous, current)
+    return current and previous.id == current.id and previous.sourceURL == current.sourceURL
+        and previous.index == current.index and previous.location == current.location
+        and previous.reveal == current.reveal and previous.command == current.command
+end
+
+local function ownsSavedWaypoint(panel, selection)
+    local owned = panel.ownedWorldMapWaypoint and panel.ownedWorldMapWaypoint.selection
+    return owned ~= nil and selection ~= nil and owned.id == selection.id
+        and owned.sourceURL == selection.sourceURL and owned.index == selection.index
+        and owned.location == selection.location and sameWorldMapWaypoint(owned.waypoint, selection.waypoint)
+end
+
+local function clearWorldMapWaypoint(panel, selection)
+    if not ownsSavedWaypoint(panel, selection) or not supportsClearWorldMapWaypoint() then
+        return "Journal waypoint unavailable."
+    end
+    local owned = panel.ownedWorldMapWaypoint
+    local observed, current = currentWorldMapWaypoint()
+    if not observed or panel.ownedWorldMapWaypoint ~= owned or not sameWorldMapWaypoint(owned.point, current) then
+        panel.ownedWorldMapWaypoint = nil
+        return "The journal waypoint could not be verified."
+    end
+    local called, _, updates = mutateWorldMapWaypoint(panel, C_Map.ClearUserWaypoint)
+    observed, current = currentWorldMapWaypoint()
+    if called and observed and current == nil then
+        panel.ownedWorldMapWaypoint = nil
+        return "Waypoint cleared from the World Map."
+    end
+    if not called or updates > 0 or not observed or not sameWorldMapWaypoint(owned.point, current) then
+        panel.ownedWorldMapWaypoint = nil
+    end
+    return "Could not clear the World Map waypoint."
+end
+
 local function routeCategory(route)
     return routeCategories[route.category] or otherCategory
+end
+
+local function categoryCollapsed(collapsed, key)
+    local value = collapsed[key]
+    return not (issecretvalue and issecretvalue(value)) and value == true
 end
 
 local function paginateRoutes(routes, collapsed, screenHeight)
@@ -166,7 +464,7 @@ local function paginateRoutes(routes, collapsed, screenHeight)
     for _, route in ipairs(sorted) do
         local category = routeCategory(route)
         local newHeading = category ~= previousCategory
-        local expanded = not collapsed[category.key]
+        local expanded = not categoryCollapsed(collapsed, category.key)
         if newHeading or expanded then
             local height = (newHeading and routeHeadingHeight or 0) + (expanded and routeRowHeight or 0)
             entries[#entries + 1] = {
@@ -211,7 +509,7 @@ local function paginateRoutes(routes, collapsed, screenHeight)
     return pages, height, routeIndex
 end
 
-local function makePanel(api, changePage, changeFilter)
+local function makePanel(api, changePage, changeFilter, setAllCategories, cycleStatus, refresh)
     local panel = CreateFrame("Frame", panelName, UIParent, "PortraitFrameTemplate")
     panel:SetSize(424, journalHeight)
     panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 34, -126)
@@ -339,7 +637,7 @@ local function makePanel(api, changePage, changeFilter)
     controls.routeCategoryMenu = menu
     controls.routeCategoryOptions = {}
     menu:SetSize(154, 4 + 24 * (#categoryOrder + 1))
-    menu:SetPoint("TOPLEFT", 252, -174)
+    menu:SetPoint("TOPLEFT", 252, -206)
     menu:SetFrameLevel(body:GetFrameLevel() + 10)
     menu:EnableMouse(true)
     surface(menu, "BACKGROUND", 0.09, 0.075, 0.057, 1)
@@ -372,6 +670,41 @@ local function makePanel(api, changePage, changeFilter)
         self:SetText("")
         self:ClearFocus()
     end)
+    controls.continueLast, controls.continueLastCaption =
+        button(body, "Continue Last Secret", 150, 256, -74, api.continueLast)
+    local function hideContinueTooltip(self)
+        if GameTooltip and GameTooltip:IsOwned(self) then
+            GameTooltip:Hide()
+        end
+    end
+    controls.continueLast:SetScript("OnEnter", function(self)
+        if GameTooltip and self.waypointTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(self.waypointTooltip, 1, 1, 1, true)
+            GameTooltip:Show()
+        end
+    end)
+    controls.continueLast:SetScript("OnLeave", hideContinueTooltip)
+    controls.continueLast:SetScript("OnHide", hideContinueTooltip)
+    controls.pausedRouteTitle = label(body, "GameFontNormalSmall", 18, -85, 228, 14)
+    controls.pausedRouteTitle:SetTextColor(unpack(gold))
+    if controls.pausedRouteTitle.SetWordWrap then
+        controls.pausedRouteTitle:SetWordWrap(false)
+    end
+    if controls.pausedRouteTitle.SetMaxLines then
+        controls.pausedRouteTitle:SetMaxLines(1)
+    end
+    controls.pausedStep = label(body, "GameFontHighlightSmall", 18, -99, 388, 12)
+    controls.pausedStep:SetTextColor(unpack(muted))
+    if controls.pausedStep.SetWordWrap then
+        controls.pausedStep:SetWordWrap(false)
+    end
+    if controls.pausedStep.SetMaxLines then
+        controls.pausedStep:SetMaxLines(1)
+    end
+    controls.routeExpandAll = button(body, "Expand All", 98, 18, -177, function() setAllCategories(nil) end)
+    controls.routeCollapseAll = button(body, "Collapse All", 104, 124, -177, function() setAllCategories(true) end)
+    controls.routeStatus = button(body, "", 154, 252, -177, cycleStatus)
     controls.routeEmpty = label(body, "GameFontHighlight", 18, -routeListTop, 388, 40)
     controls.routeEmpty:SetTextColor(unpack(muted))
 
@@ -434,22 +767,54 @@ local function makePanel(api, changePage, changeFilter)
     jumpInput:SetScript("OnEscapePressed", panel.resetJump)
 
     local mapInput = CreateFrame("EditBox", nil, body, "InputBoxTemplate")
-    mapInput:SetSize(172, 24)
-    mapInput:SetPoint("BOTTOMLEFT", 150, 54)
+    mapInput:SetHeight(24)
     mapInput:SetAutoFocus(false)
     controls.mapCommandInput = mapInput
     local copyHint = label(body, "GameFontHighlightSmall", 327, 0, 80, 15)
-    copyHint:ClearAllPoints()
-    copyHint:SetPoint("BOTTOMLEFT", 327, 57)
     copyHint:SetText("Ctrl+C to copy")
 
     local selectedCommand
+    panel.updateShowOnMap = function()
+        local show = panel.canShowSavedMap == true and not panel.selectedSavedMapCommand
+        controls.showOnMap:SetShown(show)
+        panel.stepTitle:SetWidth(show and 266 or 388)
+    end
     panel.resetMapCommand = function()
+        if panel.selectedSavedMapCommand then
+            panel.stepTitle:Show()
+            panel.canShowSavedMap = supportsOpenWorldMap() and savedWaypoint(api.getLastPausedRoute()) ~= nil
+        end
+        panel.selectedSavedMapCommand = nil
         selectedCommand = nil
         mapInput:ClearFocus()
         mapInput:SetText("")
         mapInput:Hide()
         copyHint:Hide()
+        panel.updateShowOnMap()
+    end
+    local function showMapCommand(command, savedCommand)
+        jumpInput:ClearFocus()
+        search:ClearFocus()
+        mapInput:ClearAllPoints()
+        copyHint:ClearAllPoints()
+        if savedCommand then
+            mapInput:SetWidth(272)
+            mapInput:SetPoint("TOPLEFT", 24, -115)
+            copyHint:SetPoint("TOPLEFT", 306, -120)
+        else
+            mapInput:SetWidth(172)
+            mapInput:SetPoint("BOTTOMLEFT", 150, 54)
+            copyHint:SetPoint("BOTTOMLEFT", 327, 57)
+        end
+        panel.selectedSavedMapCommand = savedCommand
+        panel.stepTitle:SetShown(savedCommand == nil)
+        panel.updateShowOnMap()
+        selectedCommand = command
+        mapInput:SetText(command)
+        mapInput:Show()
+        copyHint:Show()
+        mapInput:SetFocus()
+        mapInput:HighlightText()
     end
     mapInput:SetScript("OnTextChanged", function(self)
         if selectedCommand and self:GetText() ~= selectedCommand then
@@ -462,17 +827,59 @@ local function makePanel(api, changePage, changeFilter)
     controls.mapCommand = button(body, "Map Command", 120, 18, 0, function()
         local _, waypoint = api.getCurrentStep()
         if panel:IsShown() and canShowMapCommand(waypoint, api.getReveal()) then
-            jumpInput:ClearFocus()
-            selectedCommand = mapCommandText(waypoint)
-            mapInput:SetText(selectedCommand)
-            mapInput:Show()
-            copyHint:Show()
-            mapInput:SetFocus()
-            mapInput:HighlightText()
+            showMapCommand(mapCommandText(waypoint))
         end
     end)
     controls.mapCommand:ClearAllPoints()
     controls.mapCommand:SetPoint("BOTTOMLEFT", 18, 54)
+    controls.copyWaypoint, controls.copyWaypointCaption = button(body, "Copy Waypoint", 98, 308, -74, function(self)
+        local savedCommand = savedMapCommand(api.getLastPausedRoute())
+        if panel:IsShown() and self:IsShown() and savedCommand then
+            menu:Hide()
+            showMapCommand(savedCommand.command, savedCommand)
+        elseif panel.selectedSavedMapCommand then
+            panel.resetMapCommand()
+        end
+    end)
+
+    local function applyWaypointAction(self, action)
+        if panel:IsShown() and self:IsShown() then
+            local selection = savedMapCommand(api.getLastPausedRoute())
+            panel.resetMapCommand()
+            menu:Hide()
+            local message = action(panel, selection)
+            refresh()
+            panel.stepTitle:SetText(message)
+        end
+    end
+    controls.setWaypoint, controls.setWaypointCaption = button(body, "Set Waypoint", 130, 276, -74, function(self)
+        applyWaypointAction(self, setWorldMapWaypoint)
+    end)
+    controls.clearWaypoint = button(body, "Clear Waypoint", 94, 312, -74, function(self)
+        applyWaypointAction(self, clearWorldMapWaypoint)
+    end)
+
+    controls.showOnMap = button(body, "Show on Map", 110, 296, -117, function(self)
+        if not panel:IsShown() or not self:IsShown() then
+            return
+        end
+        hideSavedMapMarker(panel.savedMapMarker)
+        local selection = savedMapCommand(api.getLastPausedRoute())
+        if not selection or not supportsOpenWorldMap() then
+            refresh()
+            panel.stepTitle:SetText("Saved map unavailable.")
+            return
+        end
+        local mapID = selection.waypoint.mapID
+        if not pcall(C_Map.OpenWorldMap, mapID) then
+            panel.stepTitle:SetText("Could not open the saved map.")
+        elseif worldMapShows(mapID) then
+            if not pcall(showSavedMapMarker, panel, selection) then
+                hideSavedMapMarker(panel.savedMapMarker)
+            end
+            panel:Hide()
+        end
+    end)
 
     controls.navigation = button(body, "", 176, 230, -12, api.switchNavigation)
     panel.navigationStatus = label(body, "GameFontHighlightSmall", 77, -9, 145, 42)
@@ -519,12 +926,12 @@ local function makePanel(api, changePage, changeFilter)
     return panel
 end
 
-function namespace.CreateSecretsUI(api)
+function namespace.CreateSecretsUI(api, collapsedCategories)
     local ui = {}
     local panel, finished
     local page = 1
-    local query, categoryFilter = "", "all"
-    local collapsed = {}
+    local query, categoryFilter, statusFilter = "", "all", "all"
+    local collapsed = type(collapsedCategories) == "table" and collapsedCategories or {}
 
     function ui:Refresh()
         if not panel then
@@ -573,8 +980,86 @@ function namespace.CreateSecretsUI(api)
         for _, heading in pairs(controls.routeHeadings) do
             heading:Hide()
         end
+        local pausedRoute, pausedIndex, pausedLocation, pausedReveal
+        if not tracking then
+            pausedRoute, pausedIndex, pausedLocation, pausedReveal = api.getLastPausedRoute()
+        end
+        local canContinue = pausedRoute ~= nil
+        local savedCommand = savedMapCommand(pausedRoute, pausedIndex, pausedLocation, pausedReveal)
+        local marker = panel.savedMapMarker
+        if marker and marker.selection then
+            local savedPoint = savedCommand and savedCommand.waypoint
+            if not sameSavedMapCommand(marker.selection, savedCommand) or marker.waypointSnapshot.mapID ~= savedPoint.mapID
+                or marker.waypointSnapshot.x ~= savedPoint.x or marker.waypointSnapshot.y ~= savedPoint.y then
+                hideSavedMapMarker(marker)
+            end
+        end
+        local canCopyWaypoint = savedCommand ~= nil
+        local canSetWaypoint = canCopyWaypoint and supportsWorldMapWaypoint()
+        local canClearWaypoint = canSetWaypoint and supportsClearWorldMapWaypoint() and ownsSavedWaypoint(panel, savedCommand)
+        local pausedStepText, waypointTooltip = "", nil
+        if canContinue then
+            pausedStepText = ("Step %d of %d"):format(pausedIndex, #pausedRoute.steps)
+            local waypoints = pausedRoute.steps[pausedIndex].waypoints
+            local waypointCount = #waypoints
+            if waypointCount > 1 and type(pausedLocation) == "number"
+                and pausedLocation >= 1 and pausedLocation <= waypointCount
+                and pausedLocation == math.floor(pausedLocation) then
+                pausedStepText = pausedStepText .. (" · Location %d of %d"):format(pausedLocation, waypointCount)
+                if pausedReveal == "coordinates" or pausedReveal == "full" then
+                    local waypoint = waypoints[pausedLocation]
+                    local zone = waypointZone(waypoint, true)
+                    if zone then
+                        pausedStepText = pausedStepText .. (" · %s (%s)"):format(zone, coordinatesText(waypoint))
+                        waypointTooltip = pausedStepText
+                    end
+                end
+            end
+        end
+        controls.continueLast.waypointTooltip = waypointTooltip
+        controls.continueLast:ClearAllPoints()
+        controls.continueLast:SetPoint("TOPLEFT", canSetWaypoint and 18 or (canCopyWaypoint and 170 or 256), -74)
+        local continueWidth = canClearWaypoint and 88 or (canCopyWaypoint and 132 or 150)
+        controls.continueLast:SetText(canClearWaypoint and "Continue" or "Continue Last Secret")
+        controls.continueLast:SetWidth(continueWidth)
+        controls.continueLastCaption:SetWidth(continueWidth - 4)
+        controls.continueLast:SetShown(canContinue)
+        local copyWidth = canClearWaypoint and 96 or (canSetWaypoint and 110 or 98)
+        controls.copyWaypoint:ClearAllPoints()
+        controls.copyWaypoint:SetPoint("TOPLEFT", canClearWaypoint and 114 or (canSetWaypoint and 158 or 308), -74)
+        controls.copyWaypoint:SetWidth(copyWidth)
+        controls.copyWaypointCaption:SetWidth(copyWidth - 4)
+        controls.copyWaypoint:SetShown(canCopyWaypoint)
+        local setWidth = canClearWaypoint and 86 or 130
+        controls.setWaypoint:ClearAllPoints()
+        controls.setWaypoint:SetPoint("TOPLEFT", canClearWaypoint and 218 or 276, -74)
+        controls.setWaypoint:SetWidth(setWidth)
+        controls.setWaypointCaption:SetWidth(setWidth - 4)
+        controls.setWaypoint:SetShown(canSetWaypoint)
+        controls.clearWaypoint:SetShown(canClearWaypoint)
+        local showPausedTitle = canContinue and not canSetWaypoint
+        controls.pausedRouteTitle:SetWidth(canCopyWaypoint and 144 or 228)
+        controls.pausedRouteTitle:SetText(showPausedTitle and pausedRoute.title or "")
+        controls.pausedRouteTitle:SetShown(showPausedTitle)
+        if canSetWaypoint then
+            panel.routeTitle:SetText(pausedRoute.title)
+        end
+        controls.pausedStep:SetText(pausedStepText)
+        controls.pausedStep:SetShown(canContinue)
+        panel.routeTitle:SetSize(canCopyWaypoint and 170 or 390, canContinue and 18 or 34)
+        panel.progress:ClearAllPoints()
+        if canCopyWaypoint then
+            panel.progress:SetPoint("TOPLEFT", 193, -53)
+            panel.progress:SetSize(213, 14)
+        else
+            panel.progress:SetPoint("TOPLEFT", 18, canContinue and -70 or -88)
+            panel.progress:SetSize(canContinue and 228 or 390, canContinue and 14 or 18)
+        end
         controls.routeSearch:SetShown(not tracking)
         controls.routeCategory:SetShown(not tracking)
+        controls.routeExpandAll:SetShown(not tracking)
+        controls.routeCollapseAll:SetShown(not tracking)
+        controls.routeStatus:SetShown(not tracking)
         controls.routeRule:SetShown(not tracking)
         controls.routeEmpty:Hide()
         local height, paging, pageCount = journalHeight, false, 1
@@ -582,13 +1067,16 @@ function namespace.CreateSecretsUI(api)
             controls.routeSearch:ClearFocus()
             controls.routeCategoryMenu:Hide()
         else
+            controls.routeStatus:SetText("Status: " .. statusOptions[statusFilter].label)
             local routes = api.getRoutes()
             local filtered, finishedCount = {}, 0
             for _, choice in ipairs(routes) do
-                if api.hasFinished(choice) then
+                local complete = api.hasFinished(choice)
+                if complete then
                     finishedCount = finishedCount + 1
                 end
-                if (categoryFilter == "all" or choice.category == categoryFilter)
+                local statusMatches = statusFilter == "all" or complete == (statusFilter == "completed")
+                if statusMatches and (categoryFilter == "all" or choice.category == categoryFilter)
                     and choice.title:lower():find(query, 1, true) then
                     filtered[#filtered + 1] = choice
                 end
@@ -597,9 +1085,13 @@ function namespace.CreateSecretsUI(api)
                 panel.progress:SetText(("%d of %d Built-In Routes Finished"):format(finishedCount, #routes))
             end
             if #filtered == 0 then
-                controls.routeEmpty:SetText(#routes == 0
-                    and "Built-in routes need your character's Alliance or Horde faction."
-                    or "No secrets match your search or category.")
+                if #routes == 0 then
+                    controls.routeEmpty:SetText("Built-in routes need your character's Alliance or Horde faction.")
+                elseif statusFilter == "all" then
+                    controls.routeEmpty:SetText("No secrets match your search or category.")
+                else
+                    controls.routeEmpty:SetText("No secrets match your search, type, and status filters.")
+                end
                 controls.routeEmpty:Show()
             end
             local pages, layoutHeight, expandedCount = paginateRoutes(filtered, collapsed, UIParent:GetHeight())
@@ -612,7 +1104,7 @@ function namespace.CreateSecretsUI(api)
                     and ("%d–%d of %d"):format(visible.first, visible.last, expandedCount)
                     or ("Page %d of %d"):format(page, pageCount))
             end
-            local ruleY = paging and 53 or 15
+            local ruleY = paging and 51 or 15
             controls.routeRule:ClearAllPoints()
             controls.routeRule:SetPoint("BOTTOMLEFT", 18, ruleY)
             controls.routeRule:SetPoint("BOTTOMRIGHT", -18, ruleY)
@@ -625,7 +1117,7 @@ function namespace.CreateSecretsUI(api)
                         local key = category.key
                         local title
                         heading, title = button(panel.body, "", 388, 18, position, function()
-                            collapsed[key] = not collapsed[key]
+                            collapsed[key] = not categoryCollapsed(collapsed, key) or nil
                             controls.routeCategoryMenu:Hide()
                             self:Refresh()
                         end)
@@ -639,7 +1131,7 @@ function namespace.CreateSecretsUI(api)
                         heading:ClearAllPoints()
                         heading:SetPoint("TOPLEFT", 18, position)
                     end
-                    heading:SetText((collapsed[category.key] and "+  " or "-  ") .. category.label:upper())
+                    heading:SetText((categoryCollapsed(collapsed, category.key) and "+  " or "-  ") .. category.label:upper())
                     heading:Show()
                     position = position - routeHeadingHeight
                 end
@@ -684,10 +1176,16 @@ function namespace.CreateSecretsUI(api)
             controls.jumpLabel:SetText(("Go to Step (1–%d)"):format(#route.steps))
         end
         local showMapCommand = tracking and canShowMapCommand(waypoint, reveal)
-        if not showMapCommand or panel.mapCommandRoute ~= route or panel.mapCommandIndex ~= index
+        if panel.selectedSavedMapCommand then
+            if not sameSavedMapCommand(panel.selectedSavedMapCommand, savedCommand) then
+                panel.resetMapCommand()
+            end
+        elseif not showMapCommand or panel.mapCommandRoute ~= route or panel.mapCommandIndex ~= index
             or panel.mapCommandWaypoint ~= waypoint or panel.mapCommandReveal ~= reveal then
             panel.resetMapCommand()
         end
+        panel.canShowSavedMap = canCopyWaypoint and supportsOpenWorldMap()
+        panel.updateShowOnMap()
         panel.mapCommandRoute, panel.mapCommandIndex = route, index
         panel.mapCommandWaypoint, panel.mapCommandReveal = waypoint, reveal
         panel:SetHeight(height + (jumpRoute and 34 or 0) + (showMapCommand and 34 or 0))
@@ -748,10 +1246,42 @@ function namespace.CreateSecretsUI(api)
                 categoryFilter = category or categoryFilter
                 page = 1
                 self:Refresh()
+            end, function(value)
+                for _, category in ipairs(categoryOrder) do
+                    collapsed[category.key] = value
+                end
+                collapsed[otherCategory.key] = value
+                panel.controls.routeCategoryMenu:Hide()
+                panel.controls.routeSearch:ClearFocus()
+                page = 1
+                self:Refresh()
+            end, function()
+                statusFilter = statusOptions[statusFilter].next
+                panel.controls.routeCategoryMenu:Hide()
+                panel.controls.routeSearch:ClearFocus()
+                page = 1
+                self:Refresh()
+            end, function()
+                self:Refresh()
             end)
             panel:RegisterEvent("DISPLAY_SIZE_CHANGED")
             panel:RegisterEvent("UI_SCALE_CHANGED")
-            panel:SetScript("OnEvent", function()
+            panel:RegisterEvent("USER_WAYPOINT_UPDATED")
+            panel:SetScript("OnEvent", function(_, event)
+                if event == "USER_WAYPOINT_UPDATED" then
+                    if panel.waypointUpdateCount ~= nil then
+                        panel.waypointUpdateCount = panel.waypointUpdateCount + 1
+                    else
+                        panel.waypointGeneration = (panel.waypointGeneration or 0) + 1
+                        if panel.ownedWorldMapWaypoint then
+                            panel.ownedWorldMapWaypoint = nil
+                            if panel:IsShown() and not api.getRoute() then
+                                self:Refresh()
+                            end
+                        end
+                    end
+                    return
+                end
                 panel.controls.routeCategoryMenu:Hide()
                 if panel:IsShown() and not api.getRoute() then
                     self:Refresh()
