@@ -966,6 +966,7 @@ do
         ["dawn-waker-eluviana"] = {
             {2521, 417, 234}, {2521, 476, 719}, {1447, 660, 541}, {2482, 727, 372}, {2521, 583, 245},
         },
+        ["excitable-slime"] = { {1458, 555, 641}, {1458, 523, 584}, {1458, 509, 534} },
         ["manual-scavenger-hunt"] = {
             {1417, 226.9, 241.7}, {1424, 876.1, 479.1}, {1458, 228.6, 361.9},
             {2548, 265.6, 455.8}, {2548, 267.2, 477.4}, {1419, 451.9, 164.7},
@@ -975,7 +976,8 @@ do
     for _, side in ipairs({ "Horde", "Alliance" }) do
         faction = side
         local choices = namespace.StandaloneSecrets()
-        assert(#choices == 8, "Every built-in route is available to either faction")
+        assert(#choices == (side == "Horde" and 9 or 8), "Only Horde receives Excitable Slime")
+        assert(side ~= "Horde" or choices[9].id == "excitable-slime", "Slime is appended to the Horde catalog")
         for i = 3, #choices do
             local choice = choices[i]
             assert(choice.sourceURL and secrets.controls.routes[choice.id]:IsVisible(),
@@ -1032,7 +1034,38 @@ do
             and legacy:GetResumeStep(dawn) == total, "Explicit pauses take precedence over legacy chapter progress")
     end
     faction = "Horde"
-    assert(secrets.progress:GetText() == "0 of 8 Built-In Routes Finished")
+    local slime = secrets.controls.routes["excitable-slime"]
+    assert(secrets.progress:GetText() == "0 of 9 Built-In Routes Finished" and slime:IsVisible())
+    local _, _, slimeRowY = slime:GetPoint()
+    assert(26 - slimeRowY + slime:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
+        "The ninth Horde row fits above navigation")
+    local hordeHeight = secrets:GetHeight()
+
+    faction = "Alliance"
+    slash("secrets")
+    slash("secrets")
+    assert(not slime:IsVisible() and secrets.progress:GetText() == "0 of 8 Built-In Routes Finished"
+        and secrets:GetHeight() + 30 == hordeHeight, "Alliance keeps the eight-route journal height")
+    click(slime)
+    assert(not SecretCompassSecretDB.route, "A stale Horde route row cannot start on Alliance")
+    faction = "Horde"
+    slash("secrets")
+    slash("secrets")
+
+    click(slime)
+    assert(secrets.routeTitle:GetText() == "Excitable Slime" and not secrets.controls.mapCommand:IsVisible(),
+        "Horde can open the standalone route with clues only")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1458 55.50 64.10",
+        "The Boyle pin can be copied")
+    click(secrets.controls.next)
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1458 50.90 53.40",
+        "Next Location cycles the canal search areas")
+    click(secrets.controls.stop)
+
     local manual = secrets.controls.routes["manual-scavenger-hunt"]
     local _, _, rowY = manual:GetPoint()
     assert(26 - rowY + manual:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),

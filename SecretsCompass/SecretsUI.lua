@@ -4,6 +4,7 @@ local panelName = "SecretsCompassSecrets"
 local journalTitle = "SecretsCompass Journal"
 local portraitPath = "Interface\\AddOns\\" .. addonName .. "\\Media\\MinimapCompass.tga"
 local journalHeight = 471
+local routeRowHeight, baseRouteRows = 30, 8
 local navigationMessages = {
     delegated = "Waypoint sent to the external arrow.",
     unavailable = "External arrow unavailable. Using your HUD preference.",
@@ -371,7 +372,7 @@ function namespace.CreateSecretsUI(api)
             local finishedCount = 0
             for index, choice in ipairs(routes) do
                 local id = choice.id
-                local position = -157 - (index - 1) * 30
+                local position = -157 - (index - 1) * routeRowHeight
                 local row = controls.routes[id]
                 if not row then
                     row = button(panel.body, "", 388, 18, position, function() api.start(id) end)
@@ -416,7 +417,8 @@ function namespace.CreateSecretsUI(api)
         end
         panel.mapCommandRoute, panel.mapCommandIndex = route, index
         panel.mapCommandWaypoint, panel.mapCommandReveal = waypoint, reveal
-        panel:SetHeight(journalHeight + (jumpRoute and 34 or 0) + (showMapCommand and 34 or 0))
+        local extraRouteHeight = routes and math.max(0, #routes - baseRouteRows) * routeRowHeight or 0
+        panel:SetHeight(journalHeight + extraRouteHeight + (jumpRoute and 34 or 0) + (showMapCommand and 34 or 0))
         controls.mapCommand:SetShown(showMapCommand)
         controls.jumpLabel:SetShown(jumpRoute ~= nil)
         controls.jumpInput:SetShown(jumpRoute ~= nil)

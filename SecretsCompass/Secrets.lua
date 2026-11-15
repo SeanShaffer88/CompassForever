@@ -846,6 +846,33 @@ local function manualScavengerHuntRoute()
     })
 end
 
+local function excitableSlimeRoute()
+    return ns.NormalizeSecretRoute({
+        id = "excitable-slime",
+        title = "Excitable Slime",
+        sourceURL = "https://warcraft-secrets.com/guides/excitable-slime",
+        steps = {
+            routeStep("Buy Nutritious Slime Sludge",
+                "Horde only. In Undercity's Apothecarium, find Boyle on the dock and buy Nutritious Slime Sludge. "
+                    .. "Keep one portion in your bags for the next step.",
+                { mapID = 1458, x = 0.555, y = 0.641, label = "Boyle's dock (approximate)" },
+                "A vendor in the Apothecarium sells something the slime wants."),
+            {
+                title = "Dance for an Excitable Slime",
+                note = "From solid ground, target an Excitable Slime and repeat /dance until it wriggles. "
+                    .. "Interact with it and turn in the quest \"WRIGGLE.\" with one Nutritious Slime Sludge. "
+                    .. "Dance again if it loses interest. Use the pet item you receive to learn it. "
+                    .. "The slime patrols the green canals; both pins are approximate search areas.",
+                clue = "Try dancing for a slime that patrols the canals.",
+                waypoints = {
+                    { mapID = 1458, x = 0.523, y = 0.584, label = "Excitable Slime patrol search area" },
+                    { mapID = 1458, x = 0.509, y = 0.534, label = "Alternate patrol search area" },
+                },
+            },
+        },
+    })
+end
+
 function ns.StandaloneSecrets()
     -- Route facts cross-checked against the Forever guides from Method and Wowhead.
     local source = "https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards"
@@ -905,9 +932,13 @@ function ns.StandaloneSecrets()
             "Use the Hastily Rolled-Up Satchel below the Messenger Bag to finish the quest.",
             wall, "Look below the last find for one final bundle.", 79976, wallAccess),
     }
-    return { ns.NormalizeSecretRoute({
+    local routes = { ns.NormalizeSecretRoute({
         id = "cozy-sleeping-bag:" .. faction,
         title = "Cozy Sleeping Bag", sourceURL = source, steps = steps,
     }), alcazRoute(faction), scarletBannerRoute(), musicalGustjumperRoute(),
         nightWatchmansTorchRoute(), lynTheIgnoredRoute(), dawnWakerRoute(faction), manualScavengerHuntRoute() }
+    if faction == "horde" then
+        routes[#routes + 1] = excitableSlimeRoute()
+    end
+    return routes
 end
