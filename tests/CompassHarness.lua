@@ -61,6 +61,7 @@ function methods:SetAutoFocus(enabled) self.autoFocus = enabled end
 function methods:SetFocus() self.focused = true end
 function methods:HighlightText() self.highlighted = true end
 function methods:ClearFocus() self.focused = false end
+function methods:HasFocus() return self.focused == true end
 function methods:GetText() return self.text end
 function methods:SetStartPoint(...) self.start = { ... } end
 function methods:SetEndPoint(...) self.finish = { ... } end
@@ -83,7 +84,7 @@ for _, method in ipairs({
     "SetVertexColor", "SetShadowColor", "SetShadowOffset", "SetDrawLayer",
     "SetJustifyH", "SetJustifyV", "SetFont", "SetFontObject", "SetFontHeight", "SetAtlas",
     "SetBlendMode", "SetClipsChildren", "SetHitRectInsets", "SetFormattedText",
-    "SetOrientation", "SetObeyStepOnDrag",
+    "SetOrientation", "SetObeyStepOnDrag", "SetFontString", "SetMaxLetters", "SetTextInsets",
 }) do
     methods[method] = function() end
 end
@@ -652,7 +653,7 @@ do
         end
         local lastRow = secrets.controls.routes[isAlliance and "silver-of-the-waves" or "whispering-horror-residue"]
         local _, _, rowY = lastRow:GetPoint()
-        assert(secrets:GetHeight() == (isAlliance and 1011 or 981)
+        assert(secrets:GetHeight() == (isAlliance and 1045 or 1015)
             and not secrets.controls.routePageNext:IsVisible()
             and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
             "The last route row fits above navigation")
@@ -958,7 +959,7 @@ do
                 if not headings[route.heading] then
                     local heading = assert(controls.routeHeadings[route.heading])
                     local _, _, headingY = heading:GetPoint()
-                    assert(heading:GetText() == route.heading and headingY - heading:GetHeight() >= rowY
+                    assert(heading:GetText() == route.heading:upper() and headingY - heading:GetHeight() >= rowY
                         and (not previousBottom or previousBottom >= headingY), "Category heading sits above its first route")
                     headings[route.heading] = true
                 end
@@ -981,12 +982,12 @@ do
     end
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(1, 12, 693)
+    assertPage(1, 11, 697)
     assert(secrets.progress:GetText() == "1 of 21 Built-In Routes Finished",
         "Completion includes finished routes off the current page")
     SecretCompassSecretDB.finishedRoutes["whispering-horror-residue"] = nil
     click(nextPage)
-    assertPage(13, 21, 693)
+    assertPage(12, 21, 697)
     click(lateRoute)
     assert(secrets.routeTitle:GetText() == "Whispering Horror Residue" and not range:IsVisible()
         and not previousPage:IsVisible() and not nextPage:IsVisible() and not lateRoute:IsVisible(),
@@ -995,9 +996,9 @@ do
         assert(not heading:IsVisible(), "Tracking hides category headings")
     end
     click(controls.stop)
-    assertPage(13, 21, 693)
+    assertPage(12, 21, 697)
     click(previousPage)
-    assertPage(1, 12, 693)
+    assertPage(1, 11, 697)
 
     click(controls.routes["condor-hatchling"])
     click(controls.revealCoordinates)
@@ -1006,7 +1007,7 @@ do
     assert(controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90",
         "Next Location reaches an alternate Lord Condar search area")
     click(controls.stop)
-    assertPage(1, 12, 693)
+    assertPage(1, 11, 697)
 
     click(controls.routes["bitter-baitling"])
     click(controls.revealCoordinates)
@@ -1021,34 +1022,80 @@ do
     assert(controls.mapCommandInput:GetText() == "/mappin 1434 26.70 76.30",
         "The final step leads to Jang for the prize exchange")
     click(controls.stop)
-    assertPage(1, 12, 693)
+    assertPage(1, 11, 697)
 
     faction = "Alliance"
     choices = displayOrder(true)
     UIParent:SetHeight(480)
     fireAddonEvent("UI_SCALE_CHANGED")
-    assertPage(1, 6, 465)
+    assertPage(1, 5, 469)
     click(nextPage)
-    assertPage(7, 11, 465)
+    assertPage(6, 9, 469)
     click(nextPage)
-    assertPage(12, 16, 465)
+    assertPage(10, 13, 469)
     click(nextPage)
-    assertPage(17, 21, 465)
+    assertPage(14, 17, 469)
     click(nextPage)
-    assertPage(22, 22, 465)
+    assertPage(18, 22, 469)
     faction = "Horde"
     choices = displayOrder(false)
     slash("secrets")
     slash("secrets")
-    assertPage(16, 21, 465)
+    assertPage(18, 21, 469)
     assert(not controls.routes["baby-crocolisk"]:IsVisible(), "The Alliance route stays hidden on the Horde page")
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(13, 21, 693)
+    assertPage(12, 21, 697)
     UIParent:SetHeight(1080)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     assert(not range:IsVisible() and cozyButton:IsVisible() and lateRoute:IsVisible(),
         "A tall viewport restores the full catalog")
+
+    UIParent:SetHeight(720)
+    fireAddonEvent("DISPLAY_SIZE_CHANGED")
+    click(nextPage)
+    assertPage(12, 21, 697)
+    local search = controls.routeSearch
+    search:SetText("   sLiMe  ")
+    local slime = controls.routes["excitable-slime"]
+    assert(search:IsVisible() and slime:IsVisible() and slime.title:GetText() == "Excitable Slime"
+        and slime.action:GetText() == "Resume · Step 2" and not cozyButton:IsVisible() and not range:IsVisible()
+        and secrets.progress:GetText() == "0 of 21 Built-In Routes Finished",
+        "Trimmed case-insensitive title search resets to page one and keeps the overall route count")
+    click(controls.routeCategory)
+    assert(controls.routeCategoryMenu:IsVisible(), "Category control opens the menu")
+    click(controls.routeCategoryOptions.collectibles)
+    assert(not controls.routeCategoryMenu:IsVisible() and not slime:IsVisible()
+        and controls.routeEmpty:IsVisible() and controls.routeEmpty:GetText() == "No secrets match your search or category.",
+        "Category selection combines with the title search and explains no results")
+    click(controls.routeCategory)
+    click(controls.routeCategoryOptions.pets)
+    assert(slime:IsVisible() and not controls.routeEmpty:IsVisible(), "Changing categories restores a matching route")
+    search:SetText("[")
+    assert(controls.routeEmpty:IsVisible() and not slime:IsVisible(), "Search handles pattern characters literally")
+    search:SetText("slime")
+    search:SetFocus()
+    click(slime)
+    assert(not search:IsVisible() and not search:HasFocus() and not controls.routeCategory:IsVisible(),
+        "Active routes hide browse controls and release search focus")
+    click(controls.stop)
+    assert(search:IsVisible() and search:GetText() == "slime" and slime:IsVisible(),
+        "Pausing a route restores the filtered journal")
+    click(controls.routeCategory)
+    click(controls.routeCategoryOptions.all)
+    search:SetText("")
+    assertPage(1, 11, 697)
+    click(controls.routeCategory)
+    UIParent:SetHeight(1080)
+    fireAddonEvent("DISPLAY_SIZE_CHANGED")
+    assert(not controls.routeCategoryMenu:IsVisible(), "Resizing closes the category menu")
+    faction = "Neutral"
+    fireAddonEvent("DISPLAY_SIZE_CHANGED")
+    assert(controls.routeEmpty:IsVisible()
+        and controls.routeEmpty:GetText() == "Built-in routes need your character's Alliance or Horde faction.",
+        "An unavailable faction has a distinct empty message")
+    faction = "Horde"
+    fireAddonEvent("DISPLAY_SIZE_CHANGED")
 end
 acceptedQuests[79007] = true
 click(cozyButton)
@@ -1148,8 +1195,8 @@ click(secrets.controls.next)
 assert(secrets.controls.stop:GetText() == "Pause")
 click(secrets.controls.stop)
 assert(SecretCompassSecretDB.route == nil and cozyButton:IsVisible()
-    and cozyButton:GetText():find("Resume", 1, true)
-    and cozyButton:GetText():find("Step 2", 1, true), "Pause exposes the saved step in the picker")
+    and cozyButton.action:GetText():find("Resume", 1, true)
+    and cozyButton.action:GetText():find("Step 2", 1, true), "Pause exposes the saved step in the picker")
 
 completionFlags[96335] = true
 click(alcazButton)
@@ -1206,12 +1253,12 @@ assert(not mapCommand:IsVisible() and not mapInput:IsVisible(), "Text-only steps
 assert(not SecretCompassSecretDB.finishedRoutes[alcaz.id], "Reaching the final step does not mark it finished")
 slash("next")
 assert(SecretCompassSecretDB.route == nil and alcazButton:IsVisible()
-    and alcazButton:GetText():find("Replay", 1, true), "Finished routes are offered for replay")
+    and alcazButton.action:GetText():find("Replay", 1, true), "Finished routes are offered for replay")
 click(alcazButton)
 assert(SecretCompassSecretDB.index == 1, "Replay starts from the first step")
 click(secrets.controls.next)
 click(secrets.controls.stop)
-assert(alcazButton:GetText():find("Resume", 1, true), "A paused replay can resume")
+assert(alcazButton.action:GetText():find("Resume", 1, true), "A paused replay can resume")
 click(cozyButton)
 assert(SecretCompassSecretDB.index == 2 and SecretCompassSecretDB.route.title == "Cozy Sleeping Bag",
     "Starting a second secret preserves the first secret's checkpoint")
