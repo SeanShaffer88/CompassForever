@@ -67,16 +67,12 @@ local function makePreview(parent)
         end
         sample.ticks[#sample.ticks + 1] = tick
     end
-    sample.quest = artwork:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    sample.quest:SetPoint("CENTER", artwork, "CENTER", -60, -27)
-    sample.quest:SetText("! 240 yd")
-
-    sample.pin = artwork:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    sample.pin:SetPoint("CENTER", artwork, "CENTER", 68, -27)
-    sample.pin:SetText("510 yd")
-    sample.pinIcon = {
-        line(artwork, 39, -27, 43, -23), line(artwork, 43, -23, 47, -27),
-        line(artwork, 47, -27, 43, -31), line(artwork, 43, -31, 39, -27),
+    sample.secret = artwork:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    sample.secret:SetPoint("LEFT", artwork, "CENTER", -29, -27)
+    sample.secret:SetText("Secret 240 yd")
+    sample.secretIcon = {
+        line(artwork, -44, -27, -40, -23), line(artwork, -40, -23, -36, -27),
+        line(artwork, -36, -27, -40, -31), line(artwork, -40, -31, -44, -27),
     }
     return sample
 end
@@ -139,7 +135,7 @@ end
 
 local function makePanel(api)
     local panel = CreateFrame("Frame", panelName, UIParent)
-    panel:SetSize(448, 456)
+    panel:SetSize(448, 428)
     panel:SetPoint("CENTER")
     panel:SetFrameStrata("DIALOG")
     panel:SetClampedToScreen(true)
@@ -206,11 +202,9 @@ local function makePanel(api)
     end
 
     local toggles = {
-        { "enabled", "Show HUD", 17, -264 },
+        { "enabled", "Show Secret HUD", 17, -264 },
         { "showMinimap", "Show Minimap Button", 224, -264 },
-        { "showQuests", "Show Quest Distances", 17, -291 },
-        { "showWaypoint", "Show Map Pin", 224, -291 },
-        { "showCardinals", "Show Cardinal Letters", 17, -318 },
+        { "showCardinals", "Show Cardinal Letters", 17, -291 },
     }
     for _, entry in ipairs(toggles) do
         local key, caption, x, y = unpack(entry)
@@ -228,44 +222,37 @@ local function makePanel(api)
     end
 
     if api.openSecrets then
-        controls.secrets = button(panel, "Secrets", 134, 296, -318, function()
+        controls.secrets = button(panel, "Secrets", 134, 296, -290, function()
             panel:Hide()
             api.openSecrets()
         end)
     end
 
-    label(panel, "GameFontNormal", "HUD Transparency", 18, -354)
-    controls.transparencyDown = button(panel, "-", 28, 18, -374, function()
+    label(panel, "GameFontNormal", "HUD Transparency", 18, -326)
+    controls.transparencyDown = button(panel, "-", 28, 18, -346, function()
         api.set("opacity", math.min(1, api.get().opacity + 0.05))
     end)
     local transparency = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     transparency:SetPoint("CENTER", controls.transparencyDown, "RIGHT", 27, 0)
-    controls.transparencyUp = button(panel, "+", 28, 101, -374, function()
+    controls.transparencyUp = button(panel, "+", 28, 101, -346, function()
         api.set("opacity", math.max(0, api.get().opacity - 0.05))
     end)
     controls.transparencyValue = transparency
 
-    controls.test = button(panel, "Test Overflow", 151, 137, -374, function()
-        if api.testActive() then
-            api.test(nil)
-        else
-            api.test(64)
-        end
-    end)
-    controls.move = button(panel, "Move HUD", 134, 296, -346, function()
+    controls.move = button(panel, "Move HUD", 134, 296, -318, function()
         panel:Hide()
         api.move()
     end)
-    controls.resetPosition = button(panel, "Reset HUD Position", 134, 296, -374, function()
+    controls.resetPosition = button(panel, "Reset HUD Position", 134, 296, -346, function()
         api.resetPosition()
     end)
 
-    label(panel, "GameFontNormal", "HUD Size", 18, -406)
+    label(panel, "GameFontNormal", "HUD Size", 18, -378)
     controls.sizeValue = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    controls.sizeValue:SetPoint("TOPRIGHT", -18, -406)
+    controls.sizeValue:SetPoint("TOPRIGHT", -18, -378)
 
     local slider = CreateFrame("Slider", nil, panel)
-    slider:SetPoint("TOPLEFT", 18, -427)
+    slider:SetPoint("TOPLEFT", 18, -399)
     slider:SetSize(412, 18)
     slider:SetOrientation("HORIZONTAL")
     slider:EnableMouse(true)
@@ -302,12 +289,9 @@ local function refreshPanel(panel, api)
     end
     controls.enabled:SetChecked(options.enabled)
     controls.showMinimap:SetChecked(options.showMinimap)
-    controls.showQuests:SetChecked(options.showQuests)
-    controls.showWaypoint:SetChecked(options.showWaypoint)
     controls.showCardinals:SetChecked(options.showCardinals)
     local transparency = math.floor((1 - options.opacity) * 100 + 0.5)
     controls.transparencyValue:SetText(("%d%%"):format(transparency))
-    controls.test:SetText(api.testActive() and "Stop Overflow Test" or "Test Overflow")
 
     local percent = math.floor(options.scale * 100 + 0.5)
     controls.sizeValue:SetText(("%d%%"):format(percent))
@@ -319,13 +303,9 @@ local function refreshPanel(panel, api)
     for _, heading in ipairs(preview.heading) do
         heading:SetShown(options.showCardinals)
     end
-    preview.quest:SetShown(options.showQuests)
-    preview.quest:SetTextColor(style.quest[1], style.quest[2], style.quest[3])
-    preview.pin:SetShown(options.showWaypoint)
-    preview.pin:SetTextColor(style.pin[1], style.pin[2], style.pin[3])
-    for _, stroke in ipairs(preview.pinIcon) do
-        stroke:SetShown(options.showWaypoint)
-        stroke:SetColorTexture(style.pin[1], style.pin[2], style.pin[3], 1)
+    preview.secret:SetTextColor(unpack(style.arc))
+    for _, stroke in ipairs(preview.secretIcon) do
+        stroke:SetColorTexture(style.secret[1], style.secret[2], style.secret[3], 1)
     end
 end
 
@@ -381,7 +361,7 @@ function namespace.CreateSettingsUI(api)
             if GameTooltip then
                 GameTooltip:SetOwner(self, "ANCHOR_LEFT")
                 GameTooltip:SetText("SecretsCompass")
-                GameTooltip:AddLine("Left-click to show or hide the HUD", 1, 1, 1)
+                GameTooltip:AddLine("Left-click to enable or disable the secret HUD", 1, 1, 1)
                 GameTooltip:AddLine("Right-click to open settings", 1, 1, 1)
                 GameTooltip:Show()
             end

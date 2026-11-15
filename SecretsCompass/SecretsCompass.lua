@@ -164,7 +164,7 @@ huntClue:SetJustifyV("TOP")
 huntClue:Hide()
 local diamond = {}
 for index = 1, 4 do
-    local color = activeStyle.pin
+    local color = activeStyle.secret
     diamond[index] = makeLine(waypoint, "ARTWORK", 2, color[1], color[2], color[3], 1)
 end
 
@@ -186,15 +186,6 @@ end
 local function worldPosition(map, position)
     if readable(position) and type(position) == "table" then
         return worldCoordinates(map, position.x, position.y)
-    end
-end
-
-local pinContinent, pinX, pinY
-local function readPin()
-    pinContinent, pinX, pinY = nil, nil, nil
-    local point = C_Map.GetUserWaypoint()
-    if readable(point) and type(point) == "table" then
-        pinContinent, pinX, pinY = worldPosition(point.uiMapID, point.position)
     end
 end
 
@@ -221,11 +212,8 @@ local function markerOffset(heading, bearing, distance)
     return offset
 end
 
-local function distanceText(yards, edge, prefix)
-    local text = ("%.0f yd"):format(yards)
-    if prefix then
-        text = prefix .. " " .. text
-    end
+local function distanceText(yards, edge)
+    local text = ("Secret %.0f yd"):format(yards)
     if edge == "<" then
         return "< " .. text
     elseif edge == ">" then
@@ -234,9 +222,9 @@ local function distanceText(yards, edge, prefix)
     return text
 end
 
-local previousOffset, previousYards, previousEdge, previousSize, previousSecret, previousApproximate
-local function updateWaypoint(heading, bearing, distance, secret, approximate)
-    if (not secret and not settings.showWaypoint) or not heading or not bearing then
+local previousOffset, previousYards, previousEdge, previousSize, previousApproximate
+local function updateWaypoint(heading, bearing, distance, approximate)
+    if not heading or not bearing then
         if waypoint:IsShown() then
             waypoint:Hide()
         end
@@ -263,13 +251,13 @@ local function updateWaypoint(heading, bearing, distance, secret, approximate)
     end
 
     local yards = not approximate and math.floor(distance + 0.5) or nil
-    if yards ~= previousYards or edge ~= previousEdge or secret ~= previousSecret or approximate ~= previousApproximate then
+    if yards ~= previousYards or edge ~= previousEdge or approximate ~= previousApproximate then
         if approximate then
             distanceLabel:SetText(edge == "<" and "< Secret" or (edge == ">" and "Secret >" or "Secret"))
         else
-            distanceLabel:SetText(distanceText(yards, edge, secret and "Secret" or nil))
+            distanceLabel:SetText(distanceText(yards, edge))
         end
-        previousYards, previousEdge, previousSecret, previousApproximate = yards, edge, secret, approximate
+        previousYards, previousEdge, previousApproximate = yards, edge, approximate
     end
 
     local size = approximate and 6 or math.max(5, 9 - math.floor(distance / 200))
@@ -285,136 +273,10 @@ local function updateWaypoint(heading, bearing, distance, secret, approximate)
     end
 end
 
-local questLog = C_QuestLog
-local questMarkers = {}
-local function colorQuestMarker(marker)
-    local color = activeStyle.quest
-    marker.label:SetTextColor(unpack(color))
-    marker.leader:SetColorTexture(color[1] * 0.87, color[2] * 0.83, color[3] * 0.94, 0.35)
-end
-
-local function getQuestMarker(index)
-    if questMarkers[index] then
-        return questMarkers[index]
-    end
-    local marker = CreateFrame("Frame", "SecretsCompassQuest" .. index, frame)
-    marker:SetSize(1, 1)
-    marker:Hide()
-    local label = marker:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    local leader = marker:CreateLine(nil, "BACKGROUND")
-    leader:SetThickness(1)
-    leader:Hide()
-    local questMarker = { frame = marker, label = label, leader = leader }
-    colorQuestMarker(questMarker)
-    questMarkers[index] = questMarker
-    return questMarker
-end
-
-local watches, questTargets, nearbyTargets = {}, {}, {}
-local testTargets
-local questsDirty, lastPlayerMap, lastPlayerContinent = true
-
-local function readQuestWatches()
-    watches = {}
-    if not questLog or not questLog.GetNumQuestWatches or not questLog.GetQuestIDForQuestWatchIndex then
-        return
-    end
-    local count = questLog.GetNumQuestWatches()
-    if not finite(count) then
-        return
-    end
-    local seen = {}
-    for index = 1, count do
-        local id = questLog.GetQuestIDForQuestWatchIndex(index)
-        if finite(id) and id > 0 and not seen[id] then
-            local completed = questLog.IsComplete and questLog.IsComplete(id)
-            if readable(completed) and completed ~= true then
-                watches[#watches + 1] = id
-            end
-            seen[id] = true
-        end
-    end
-end
-
-local function addQuestTarget(map, x, y, route, prioritized, firstTarget, playerContinent)
-    local continent, targetX, targetY = worldCoordinates(map, x, y)
-    if not continent or continent ~= playerContinent then
-        return
-    end
-    for index = firstTarget, #questTargets do
-        local target = questTargets[index]
-        if continent == target.continent and targetX == target.x and targetY == target.y then
-            return
-        end
-    end
-    questTargets[#questTargets + 1] = {
-        continent = continent, x = targetX, y = targetY, route = route,
-        prioritized = prioritized, order = #questTargets + 1,
-    }
-end
-
-local function readQuestTargets(playerMap, playerContinent)
-    questTargets = {}
-    if not playerContinent or #watches == 0 then
-        return
-    end
-    local tracked = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID
-        and C_SuperTrack.GetSuperTrackedQuestID()
-    if not finite(tracked) then
-        tracked = nil
-    end
-    local mapRows = {}
-    local function addPOIs(map, id, prioritized, firstTarget)
-        if not finite(map) or map <= 0 or not questLog.GetQuestsOnMap then
-            return
-        end
-        if not mapRows[map] then
-            local rows = questLog.GetQuestsOnMap(map)
-            mapRows[map] = readable(rows) and type(rows) == "table" and rows or {}
-        end
-        for _, row in ipairs(mapRows[map]) do
-            if readable(row) and type(row) == "table" and finite(row.questID) and row.questID == id
-                and readable(row.isQuestStart) and not row.isQuestStart
-                and readable(row.isMapIndicatorQuest) and not row.isMapIndicatorQuest then
-                -- GetQuestsOnMap supplies coordinates for the map being queried.
-                addQuestTarget(map, row.x, row.y, false, prioritized, firstTarget, playerContinent)
-            end
-        end
-    end
-
-    for _, id in ipairs(watches) do
-        local prioritized = id == tracked
-        local firstTarget = #questTargets + 1
-        addPOIs(playerMap, id, prioritized, firstTarget)
-        if #questTargets < firstTarget then
-            if GetQuestUiMapID then
-                local map = GetQuestUiMapID(id, true)
-                if finite(map) and map ~= playerMap then
-                    addPOIs(map, id, prioritized, firstTarget)
-                end
-            end
-        end
-        if #questTargets < firstTarget and questLog.GetNextWaypoint then
-            local map, x, y = questLog.GetNextWaypoint(id)
-            addQuestTarget(map, x, y, true, prioritized, firstTarget, playerContinent)
-        end
-    end
-end
-
-local function closestFirst(left, right)
-    if left.prioritized ~= right.prioritized then
-        return left.prioritized
-    elseif left.distance ~= right.distance then
-        return left.distance < right.distance
-    end
-    return left.order < right.order
-end
-
 local function playerPosition()
     local map = C_Map.GetBestMapForUnit("player")
     if finite(map) then
-        local continent, x, y = worldPosition(map, C_Map.GetPlayerMapPosition(map, "player"))
-        return map, continent, x, y
+        return worldPosition(map, C_Map.GetPlayerMapPosition(map, "player"))
     end
 end
 
@@ -436,255 +298,13 @@ local function resolveSecret()
     end
 end
 
-local bearing, distance
-local function sampleDestinations()
-    if secretStep and not testTargets then
-        secretBearing, secretDistance = nil, nil
-        if secretContinent then
-            local _, continent, x, y = playerPosition()
-            secretBearing, secretDistance = destinationBearing(continent, x, y, secretContinent, secretX, secretY)
-        end
-        return
-    end
-    if questsDirty then
-        readQuestWatches()
-    end
-    local playerMap, continent, x, y
-    if pinContinent or #watches > 0 then
-        playerMap, continent, x, y = playerPosition()
-    end
-    if questsDirty or playerMap ~= lastPlayerMap or (continent and continent ~= lastPlayerContinent) then
-        questsDirty = false
-        lastPlayerMap = playerMap
-        lastPlayerContinent = continent
-        readQuestTargets(playerMap, continent)
-    end
-
-    bearing, distance = nil, nil
-    for index = #nearbyTargets, 1, -1 do
-        nearbyTargets[index] = nil
-    end
-    if not continent then
-        return
-    end
-    bearing, distance = destinationBearing(continent, x, y, pinContinent, pinX, pinY)
-    for _, target in ipairs(questTargets) do
-        target.bearing, target.distance = destinationBearing(continent, x, y, target.continent, target.x, target.y)
-        if target.bearing then
-            nearbyTargets[#nearbyTargets + 1] = target
-        end
-    end
-    table.sort(nearbyTargets, closestFirst)
-end
-
-local questLabelGap = 4
-
-local function freeQuestRow(index, firstY, lastY, step, left, right)
-    local marker = questMarkers[index]
-    for y = firstY, lastY, step do
-        local fits = true
-        for earlier = 1, index - 1 do
-            local other = questMarkers[earlier]
-            if left - questLabelGap < other.right and right + questLabelGap > other.left
-                and math.abs(y - other.normalY) < (marker.height + other.height) / 2 + questLabelGap then
-                fits = false
-                break
-            end
-        end
-        if fits then
-            return y
-        end
+local function sampleSecretDestination()
+    secretBearing, secretDistance = nil, nil
+    if secretContinent then
+        local continent, x, y = playerPosition()
+        secretBearing, secretDistance = destinationBearing(continent, x, y, secretContinent, secretX, secretY)
     end
 end
-
-local function placeQuestMarker(marker, x, y, anchor, scale)
-    if scale ~= marker.scale then
-        marker.label:SetTextScale(scale)
-        marker.scale = scale
-    end
-    if anchor ~= marker.anchor then
-        marker.label:ClearAllPoints()
-        marker.label:SetPoint(anchor, marker.frame, "CENTER")
-        marker.anchor = anchor
-    end
-    if x ~= marker.x or y ~= marker.y then
-        marker.frame:ClearAllPoints()
-        marker.frame:SetPoint("CENTER", frame, "CENTER", x, y)
-        marker.x, marker.y = x, y
-    end
-    local shifted = x ~= marker.bearingX
-    if shifted then
-        local direction = marker.bearingX < x and -1 or 1
-        if marker.leaderX ~= marker.bearingX or marker.leaderAnchor ~= anchor
-            or marker.leaderWidth ~= marker.width * scale or marker.leaderDirection ~= direction then
-            local width = marker.width * scale
-            local endX = direction * (width / 2 + 2)
-            if anchor == "LEFT" then
-                endX = endX + width / 2
-            elseif anchor == "RIGHT" then
-                endX = endX - width / 2
-            end
-            marker.leader:SetStartPoint("CENTER", frame, marker.bearingX, arcY(marker.bearingX))
-            marker.leader:SetEndPoint("CENTER", marker.frame, endX, 0)
-            marker.leaderX, marker.leaderAnchor, marker.leaderWidth = marker.bearingX, anchor, width
-            marker.leaderDirection = direction
-        end
-        if not marker.leader:IsShown() then
-            marker.leader:Show()
-        end
-    elseif marker.leader:IsShown() then
-        marker.leader:Hide()
-    end
-    if not marker.frame:IsShown() then
-        marker.frame:Show()
-    end
-end
-
-local function normalQuestLayout(count, left, right, bottom, top)
-    for index = 1, count do
-        local marker = questMarkers[index]
-        local x = marker.bearingX
-        local anchor, textLeft = "CENTER", x - marker.width / 2
-        if textLeft + marker.width > right then
-            anchor, textLeft = "RIGHT", x - marker.width
-        elseif textLeft < left then
-            anchor, textLeft = "LEFT", x
-        end
-        local textRight = textLeft + marker.width
-        if textLeft < left or textRight > right then
-            return false
-        end
-        local minY, maxY = bottom + marker.height / 2, top - marker.height / 2
-        local firstY = math.min(arcY(x) - 22, maxY)
-        local rowStep = marker.height + questLabelGap
-        local y = freeQuestRow(index, firstY, minY, -rowStep, textLeft, textRight)
-            or freeQuestRow(index, math.max(66, minY), maxY, rowStep, textLeft, textRight)
-        if not y then
-            return false
-        end
-        marker.left, marker.right, marker.normalY, marker.normalAnchor = textLeft, textRight, y, anchor
-    end
-    return true
-end
-
-local function compactQuestLayout(count, left, right, bottom, top, scaleRatio)
-    local widest, tallest = 0, 0
-    for index = 1, count do
-        local marker = questMarkers[index]
-        widest = math.max(widest, marker.width)
-        tallest = math.max(tallest, marker.height)
-    end
-
-    local bandBottom, bandTop = bottom, math.min(top, -76)
-    if bandTop - bandBottom < 1 then
-        local upperBottom = math.max(bottom, 58)
-        bandBottom, bandTop = upperBottom < top and upperBottom or bottom, top
-    end
-    local availableWidth = math.min(right - left, 440 / math.max(1, scaleRatio))
-    local availableHeight = bandTop - bandBottom
-    local cellWidth, cellHeight = widest + questLabelGap, tallest + questLabelGap
-    local scale, columns = 0, 1
-    for candidate = 1, count do
-        local rows = math.ceil(count / candidate)
-        local candidateScale = math.min(1, availableWidth / (candidate * cellWidth),
-            availableHeight / (rows * cellHeight))
-        -- At the same text size, the wider grid keeps the last row closer to the compass.
-        if candidateScale >= scale then
-            scale, columns = candidateScale, candidate
-        end
-    end
-
-    local columnWidth, rowHeight = cellWidth * scale, cellHeight * scale
-    local halfBlockWidth = availableWidth / 2
-    local center = math.max(left + halfBlockWidth, math.min(0, right - halfBlockWidth))
-    for index = 1, count do
-        local row, column = math.floor((index - 1) / columns), (index - 1) % columns
-        local rowColumns = math.min(columns, count - row * columns)
-        local x = center + (column + 0.5 - rowColumns / 2) * columnWidth
-        local y = bandTop - (row + 0.5) * rowHeight
-        placeQuestMarker(questMarkers[index], x, y, "CENTER", scale)
-    end
-end
-
-local lastQuestCount, lastQuestLeft, lastQuestRight, lastQuestBottom, lastQuestTop
-local function renderQuests(heading)
-    local targets = testTargets or nearbyTargets
-    local count = (testTargets or (heading and settings.showQuests and not secretStep)) and #targets or 0
-    for index = count + 1, math.min(lastQuestCount or 0, #questMarkers) do
-        questMarkers[index].frame:Hide()
-    end
-    local layoutChanged = count ~= lastQuestCount
-    lastQuestCount = count
-    if count == 0 then
-        return
-    end
-
-    local centerX, centerY = frame:GetCenter()
-    local screenWidth, screenHeight = UIParent:GetWidth(), UIParent:GetHeight()
-    if not finite(centerX) or not finite(centerY) or not finite(screenWidth) or not finite(screenHeight)
-        or screenWidth <= 0 or screenHeight <= 0 then
-        -- Anchors are resolved after the frame and its parent acquire valid geometry.
-        lastQuestLeft = nil
-        for index = 1, #questMarkers do
-            questMarkers[index].frame:Hide()
-        end
-        return
-    end
-    local scale = hudScale()
-    local horizontalMargin, verticalMargin = math.min(8, screenWidth / 4), math.min(8, screenHeight / 4)
-    local left = horizontalMargin / scale - centerX
-    local right = (screenWidth - horizontalMargin) / scale - centerX
-    local bottom = verticalMargin / scale - centerY
-    local top = (screenHeight - verticalMargin) / scale - centerY
-    layoutChanged = layoutChanged or left ~= lastQuestLeft or right ~= lastQuestRight
-        or bottom ~= lastQuestBottom or top ~= lastQuestTop
-    lastQuestLeft, lastQuestRight = left, right
-    lastQuestBottom, lastQuestTop = bottom, top
-
-    for index, target in ipairs(targets) do
-        local marker = getQuestMarker(index)
-        local offset, edge = 0, nil
-        if not testTargets then
-            offset, edge = markerOffset(heading, target.bearing, target.distance)
-        end
-        local yards = math.floor(target.distance + 0.5)
-        if offset ~= marker.offset then
-            marker.offset = offset
-            marker.bearingX = offset * halfWidth / halfView
-            layoutChanged = true
-        end
-        if yards ~= marker.yards or edge ~= marker.edge or target.route ~= marker.route then
-            local text = distanceText(yards, edge, target.route and "~" or "!")
-            marker.label:SetText(text)
-            local scale = marker.scale or 1
-            if scale ~= 1 then
-                marker.label:SetTextScale(1)
-            end
-            local width, height = marker.label:GetStringWidth(), marker.label:GetStringHeight()
-            if scale ~= 1 then
-                marker.label:SetTextScale(scale)
-            end
-            width = width > 0 and width or #text * 7
-            height = height > 0 and height or 14
-            layoutChanged = layoutChanged or width ~= marker.width or height ~= marker.height
-            marker.width, marker.height = width, height
-            marker.yards, marker.edge, marker.route = yards, edge, target.route
-        end
-    end
-
-    if not layoutChanged then
-        return
-    end
-    if normalQuestLayout(count, math.max(left, -halfWidth + 4), math.min(right, halfWidth - 4), bottom, top) then
-        for index = 1, count do
-            local marker = questMarkers[index]
-            placeQuestMarker(marker, marker.bearingX, marker.normalY, marker.normalAnchor, 1)
-        end
-    else
-        compactQuestLayout(count, left, right, bottom, top, scale)
-    end
-end
-
 local function syncSecretNavigation(retryFailed)
     if not secretNavigation then
         return
@@ -692,8 +312,6 @@ local function syncSecretNavigation(retryFailed)
     local step, waypoint = secretTracker:GetCurrentStep()
     if navigationMode ~= "external" or not step then
         navigationStatus = secretNavigation:Sync(nil)
-    elseif testTargets then
-        navigationStatus = secretNavigation:Sync(nil) or "test"
     elseif secretReveal ~= "coordinates" and secretReveal ~= "full" then
         navigationStatus = secretNavigation:Sync(nil) or "reveal"
     elseif not waypoint then
@@ -708,9 +326,7 @@ local function updateSecretStatus(heading)
     local available = heading ~= nil and secretBearing ~= nil
     local status = ""
     if secretStep then
-        if testTargets then
-            status = "Compass paused during the overflow test."
-        elseif navigationStatus == "delegated" then
+        if navigationStatus == "delegated" then
             status = "Waypoint sent for this step."
         elseif not settings.enabled or settings.opacity == 0 then
             status = "The HUD is hidden."
@@ -733,7 +349,7 @@ end
 
 local huntStep, huntDestination
 local function updateHuntClue()
-    if not secretStep or testTargets then
+    if not secretStep then
         if huntClue:IsShown() then
             huntClue:Hide()
         end
@@ -762,12 +378,7 @@ end
 local function render()
     local heading = getHeading()
     updateHeading(heading)
-    if secretStep and not testTargets then
-        updateWaypoint(heading, secretBearing, secretDistance, true, secretReveal == "clue")
-    else
-        updateWaypoint(heading, bearing, distance)
-    end
-    renderQuests(heading)
+    updateWaypoint(heading, secretBearing, secretDistance, secretReveal == "clue")
     updateSecretStatus(heading)
     updateHuntClue()
 end
@@ -782,15 +393,13 @@ local function onUpdate(_, elapsed)
     headingElapsed = 0
     if waypointElapsed >= 0.1 then
         waypointElapsed = 0
-        sampleDestinations()
+        sampleSecretDestination()
     end
     render()
 end
 
 local function refresh()
-    questsDirty = true
-    readPin()
-    sampleDestinations()
+    sampleSecretDestination()
     render()
 end
 
@@ -816,11 +425,6 @@ moveGuide:SetPoint("BOTTOM", frame, "CENTER", 0, 48)
 moveGuide:SetText("Drag to Move")
 moveGuide:Hide()
 
-local testLabel = frame:CreateFontString("SecretsCompassTestLabel", "OVERLAY", "GameFontNormal")
-testLabel:SetPoint("CENTER", frame, "CENTER", 0, 51)
-testLabel:SetText("Test Mode")
-testLabel:Hide()
-
 local function applyStyle()
     activeStyle = stylesByID[settings.style]
     local color = activeStyle.arc
@@ -841,16 +445,11 @@ local function applyStyle()
         end
     end
     distanceLabel:SetTextColor(unpack(color))
-    local pin = activeStyle.pin
+    local secretColor = activeStyle.secret
     for _, edge in ipairs(diamond) do
-        edge:SetColorTexture(pin[1], pin[2], pin[3], 1)
+        edge:SetColorTexture(secretColor[1], secretColor[2], secretColor[3], 1)
     end
-    for _, marker in ipairs(questMarkers) do
-        colorQuestMarker(marker)
-        marker.leaderX = nil
-    end
-    testLabel:SetTextColor(unpack(activeStyle.quest))
-    previousHeading, previousOffset, lastQuestLeft = false, nil, nil
+    previousHeading, previousOffset = false, nil
 end
 
 local function refreshSettingsUI()
@@ -883,13 +482,13 @@ local function setMoveMode(enabled)
     stopDrag()
     moveMode = enabled
     frame:EnableMouse(enabled)
-    moveGuide:SetShown(enabled and not testTargets)
+    moveGuide:SetShown(enabled)
     lockButton:SetShown(enabled)
     applyOpacity()
 end
 
 local function updateVisibility()
-    if (settings.enabled and navigationStatus ~= "delegated") or testTargets or moveMode then
+    if moveMode or (settings.enabled and secretStep and navigationStatus ~= "delegated") then
         if secretStep and not secretContinent then
             resolveSecret()
         end
@@ -909,40 +508,6 @@ local function refreshSecretNavigation(retryFailed)
     updateVisibility()
     if secretsUI then
         secretsUI:RefreshStatus()
-    end
-end
-
-local function setTestCount(count)
-    if count ~= nil then
-        if not finite(count) or count < 1 or count > 128 or count ~= math.floor(count) then
-            return
-        end
-        testTargets = {}
-        for index = 1, count do
-            testTargets[index] = { distance = index * 10 }
-        end
-    else
-        testTargets = nil
-    end
-    syncSecretNavigation()
-    testLabel:SetShown(testTargets ~= nil)
-    moveGuide:SetShown(moveMode and not testTargets or false)
-    updateVisibility()
-    refreshSettingsUI()
-end
-
-local function handleTestCommand(argument)
-    if argument == "" then
-        setTestCount(not testTargets and 64 or nil)
-    elseif argument == "off" then
-        setTestCount(nil)
-    else
-        local count = argument:match("^%d+$") and tonumber(argument)
-        if count and count >= 1 and count <= 128 then
-            setTestCount(count)
-        else
-            print("SecretsCompass: use /secretscompass test, /secretscompass test 1–128, or /secretscompass test off")
-        end
     end
 end
 
@@ -970,10 +535,6 @@ lockButton:SetScript("OnClick", function()
 end)
 
 local function startOrStopMove()
-    if not settings.enabled and not testTargets then
-        settings.enabled = true
-        updateVisibility()
-    end
     setMoveMode(not moveMode)
     updateVisibility()
     refreshSettingsUI()
@@ -992,7 +553,7 @@ local function normalizeScale(value)
     return math.floor(percent / scaleStep + 0.5) * scaleStep / 100
 end
 
-local switches = { enabled = true, showQuests = true, showWaypoint = true, showCardinals = true, showMinimap = true }
+local switches = { enabled = true, showCardinals = true, showMinimap = true }
 local function setPreference(key, value)
     if switches[key] then
         if type(value) ~= "boolean" then
@@ -1032,7 +593,7 @@ local function setPreference(key, value)
         stopDrag()
         frame:SetScale(value)
         place()
-        if settings.enabled or testTargets then
+        if frame:IsShown() then
             render()
         end
     elseif key ~= "showMinimap" then
@@ -1041,7 +602,7 @@ local function setPreference(key, value)
         elseif key == "style" then
             applyStyle()
         end
-        if settings.enabled or testTargets then
+        if frame:IsShown() then
             render()
         end
     end
@@ -1197,10 +758,8 @@ SlashCmdList.SECRETSCOMPASS = function(message)
         else
             print("SecretsCompass: track a secret before choosing a step.")
         end
-    elseif command == "test" or command:match("^test%s") then
-        handleTestCommand(command:match("^test%s*(.*)$"))
     else
-        print("SecretsCompass: /secretscompass toggle, /secretscompass move, /secretscompass reset, /secretscompass test, /secretscompass settings, /secretscompass secrets, /secretscompass next, /secretscompass step N")
+        print("SecretsCompass: /secretscompass toggle, /secretscompass move, /secretscompass reset, /secretscompass settings, /secretscompass secrets, /secretscompass next, /secretscompass step N")
     end
 end
 
@@ -1218,15 +777,6 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
             return
         end
         self:RegisterEvent("PLAYER_ENTERING_WORLD")
-        self:RegisterEvent("USER_WAYPOINT_UPDATED")
-        if questLog then
-            self:RegisterEvent("QUEST_LOG_UPDATE")
-            self:RegisterEvent("QUEST_POI_UPDATE")
-            self:RegisterEvent("QUEST_WATCH_LIST_CHANGED")
-            self:RegisterEvent("QUEST_WATCH_UPDATE")
-            self:RegisterEvent("SUPER_TRACKING_CHANGED")
-            self:RegisterEvent("SUPER_TRACKING_PATH_UPDATED")
-        end
         if type(ForeverCompassDB) ~= "table" then
             ForeverCompassDB = {}
         end
@@ -1234,7 +784,7 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
         for key in pairs(switches) do
             settings[key] = settings[key] ~= false
         end
-        settings.theme = nil
+        settings.theme, settings.showQuests, settings.showWaypoint = nil, nil, nil
         if type(settings.style) ~= "string" or not stylesByID[settings.style] then
             settings.style = styles[1].id
         end
@@ -1261,8 +811,6 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
                 move = startOrStopMove,
                 resetPosition = resetPosition,
                 openSecrets = secretsUI and function() secretsUI:Open() end,
-                test = setTestCount,
-                testActive = function() return testTargets ~= nil end,
             })
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -1276,11 +824,5 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
             end
         end
         refreshSecretNavigation(true)
-    elseif (settings.enabled or testTargets) and event == "USER_WAYPOINT_UPDATED" then
-        readPin()
-        sampleDestinations()
-        render()
-    else
-        questsDirty = true
     end
 end)

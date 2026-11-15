@@ -147,7 +147,7 @@ end
 
 SlashCmdList = {}
 DEFAULT_CHAT_FRAME = { AddMessage = function() end }
-local facing, waypoint, unavailable, distantContinent, playerSamples
+local facing, waypoint, unavailable, playerSamples
 local secret = {}
 function issecretvalue(value) return rawequal(value, secret) end
 function GetPlayerFacing() return facing end
@@ -162,19 +162,21 @@ function CreateVector2D(x, y)
     return { x = x, y = y, GetXY = function(self) return self.x, self.y end }
 end
 
-local watched, questPOIs, questMaps, questWaypoints, completed = {}, {}, {}, {}, {}
-local superTracked, currentMap, playerX = nil, 1, 0
+local currentMap, playerX, playerY = 1, 0, 0
+local function unexpectedTracking()
+    error("SecretsCompass must not query watched quests or player map pins")
+end
 C_QuestLog = {
-    GetNumQuestWatches = function() return #watched end,
-    GetQuestIDForQuestWatchIndex = function(index) return watched[index] end,
-    GetQuestsOnMap = function(mapID) return questPOIs[mapID] end,
-    GetNextWaypoint = function(questID) return unpack(questWaypoints[questID] or {}) end,
-    IsComplete = function(questID) return completed[questID] or false end,
+    GetNumQuestWatches = unexpectedTracking,
+    GetQuestIDForQuestWatchIndex = unexpectedTracking,
+    GetQuestsOnMap = unexpectedTracking,
+    GetNextWaypoint = unexpectedTracking,
+    IsComplete = unexpectedTracking,
 }
-function GetQuestUiMapID(questID) return questMaps[questID] end
-C_SuperTrack = { GetSuperTrackedQuestID = function() return superTracked end }
+GetQuestUiMapID = unexpectedTracking
+C_SuperTrack = { GetSuperTrackedQuestID = unexpectedTracking }
 C_Map = {
-    GetUserWaypoint = function() return waypoint end,
+    GetUserWaypoint = unexpectedTracking,
     SetUserWaypoint = function() error("Routes must preserve the player's map pin") end,
     ClearUserWaypoint = function() error("Routes must not clear the player's map pin") end,
     GetMapInfo = function(id) return { name = "Test Map " .. id } end,
@@ -182,11 +184,10 @@ C_Map = {
     GetPlayerMapPosition = function(mapID, unit)
         assert(mapID == currentMap and unit == "player")
         playerSamples = playerSamples + 1
-        if not unavailable then return CreateVector2D(playerX, 0) end
+        if not unavailable then return CreateVector2D(playerX, playerY) end
     end,
     GetWorldPosFromMapPos = function(mapID, position)
         assert(type(position.GetXY) == 'function', 'Expected a Vector2D mixin')
-        if mapID == 2 and distantContinent then return 99, position end
         if mapID == 4 then return 99, CreateVector2D(position.x * 1000, position.y * 1000) end
         if mapID ~= 2 then return 5, CreateVector2D(position.x * 1000, position.y * 1000) end
         return 5, position
@@ -233,521 +234,131 @@ local function labelX(label, message)
     error(message or ("Expected visible cardinal: " .. label))
 end
 
-local function pin(x, y)
-    waypoint = x and { uiMapID = 2, position = { x = x, y = y } } or nil
-    event("USER_WAYPOINT_UPDATED")
-    advance()
+local createTracker = namespace.CreateSecretTracker
+local tracker
+namespace.CreateSecretTracker = function(...)
+    tracker = createTracker(...)
+    return tracker
 end
 
-ForeverCompassDB = { x = 0, y = 88, theme = "unknown", style = "bogus", opacity = "mistyped" }
+ForeverCompassDB = {
+    x = 0, y = 88, theme = "unknown", style = "bogus", opacity = "mistyped",
+    showQuests = true, showWaypoint = true,
+}
+waypoint = { uiMapID = 2, position = { x = 300, y = 0 } }
+SecretCompassSecretDB = {
+    route = { id = "login-fixture", title = "Saved Secret", steps = {
+        { title = "Find the lead", waypoints = {{ mapID = 1, x = 0.24, y = 0 }} },
+    } },
+    index = 1,
+    reveals = { ["login-fixture"] = "distance" },
+}
 event("ADDON_LOADED", "SecretsCompass")
 event("PLAYER_ENTERING_WORLD")
 advance()
-assert(frame:IsVisible() and heading:IsVisible() and not marker:IsVisible(), "Default state")
-assert(math.abs(labelX("N")) < 0.01, "North centered")
-local oldFacingX = labelX("N")
-facing = -math.rad(10)
+assert(frame:IsVisible() and marker:IsVisible() and marker.labels[1].text == "Secret 240 yd",
+    "A saved active secret restores its bearing and reveal level on login")
+tracker:Stop()
+local idleSamples = playerSamples
 advance()
-assert(labelX("N") < oldFacingX, "Clockwise movement shifts North left")
-facing = math.rad(10)
-advance()
-assert(labelX("N") > oldFacingX, "Counterclockwise movement shifts North right across wrap")
-
-for _, test in ipairs({
-    { 0, "N", 300, 0 },
-    { -math.pi / 2, "E", 0, -300 },
-    { math.pi, "S", -300, 0 },
-    { math.pi / 2, "W", 0, 300 },
-}) do
-    facing = test[1]
-    pin(test[3], test[4])
-    assert(math.abs(labelX(test[2])) < 0.01, "Cardinal centering")
-    assert(marker:IsVisible(), "Same-continent pin visible")
-    assert(marker.labels[1].text == "300 yd", "Correct distance and on-axis marker")
-end
-
-facing = 0
-pin(300, -100)
-local right = assert(marker.point)
-pin(300, 100)
-local left = assert(marker.point)
-assert(right[4] > left[4], "East pin must be right of west pin")
-pin(-300, -150)
-assert(marker.labels[1].text:match(" >$"), "Off-arc right pin shows right cue")
-assert(marker.labels[1].point[1] == "RIGHT" and marker.labels[1].point[4] < 0,
-    "Right-edge label stays inside the arc")
-pin(-300, 150)
-assert(marker.labels[1].text:match("^< "), "Off-arc left pin shows left cue")
-pin(0, 0)
-assert(marker.labels[1].text == "0 yd" and marker.point[4] == 0, "Arrival stays centered")
-
-distantContinent = true
-pin(300, 0)
-assert(not marker:IsVisible() and heading:IsVisible(), "Cross-continent pin hidden")
-distantContinent = false
-pin(300, 0)
-unavailable = true
-advance()
-assert(not marker:IsVisible() and heading:IsVisible(), "Missing player position only hides pin")
-unavailable = false
-advance()
-assert(marker:IsVisible(), "Pin recovers when player position becomes available")
-
-waypoint = secret
-event("USER_WAYPOINT_UPDATED")
-advance()
-assert(not marker:IsVisible() and heading:IsVisible(), "Unreadable pin only hides marker")
-pin(300, 0)
-
-facing = secret
-advance()
-assert(not heading:IsVisible() and not marker:IsVisible(), "Secret heading hides both moving layers")
-facing = nil
-advance()
-assert(not heading:IsVisible(), "Missing facing hides heading")
-facing = 0
-advance()
-assert(heading:IsVisible(), "Heading recovers")
-
-pin(nil)
-assert(not marker:IsVisible(), "Cleared map pin hidden")
-local samplesWithoutPin = playerSamples
-advance()
-assert(playerSamples == samplesWithoutPin, "No player map samples without a pin")
+assert(not frame:IsVisible() and not marker:IsVisible() and not frame.scripts.OnUpdate
+    and playerSamples == idleSamples,
+    "An enabled HUD stays idle with a player pin and legacy tracking options but no secret")assert(not SecretsCompassQuest1 and not frame.events.USER_WAYPOINT_UPDATED
+    and not frame.events.QUEST_WATCH_LIST_CHANGED and ForeverCompassDB.showQuests == nil
+    and ForeverCompassDB.showWaypoint == nil, "Obsolete tracking controls and events are removed")
 assert(SLASH_SECRETSCOMPASS1 == "/secretscompass" and SLASH_SECRETSCOMPASS2 == "/secretcompass"
     and SLASH_SECRETSCOMPASS3 == "/fcompass", "The renamed addon preserves its old slash aliases")
 local slash = assert(SlashCmdList.SECRETSCOMPASS)
+
+do
+    local positions = {{0.8, 0.5}, {0.5, 0.2}, {0.2, 0.5}, {0.5, 0.8},
+        {0.8, 0.4}, {0.8, 0.6}, {0.2, 0.35}, {0.2, 0.65}, {0.5, 0.5}}
+    local points = {}
+    for index, position in ipairs(positions) do
+        points[index] = { mapID = 1, x = position[1], y = position[2] }
+    end
+    points[#points + 1] = { mapID = 4, x = 0.8, y = 0.5 }
+    playerX, playerY = 0.5, 0.5
+    assert(tracker:Track({ id = "bearing-fixture", title = "Bearing Fixture", steps = {
+        { title = "Follow the bearing", waypoints = points },
+    } }))
+    tracker:SetReveal("distance")
+    assert(frame:IsVisible() and heading:IsVisible() and marker:IsVisible(), "Starting a secret activates the HUD")
+    assert(math.abs(labelX("N")) < 0.01, "North centered")
+    facing = -math.rad(10)
+    advance()
+    assert(labelX("N") < 0, "Clockwise movement shifts North left")
+    facing = math.rad(10)
+    advance()
+    assert(labelX("N") > 0, "Counterclockwise movement shifts North right across wrap")
+
+    for index, bearing in ipairs({ {0, "N"}, {-math.pi / 2, "E"}, {math.pi, "S"}, {math.pi / 2, "W"} }) do
+        facing = bearing[1]
+        if index > 1 then tracker:CycleLocation() end
+        advance()
+        assert(math.abs(labelX(bearing[2])) < 0.01, "Cardinal centering")
+        assert(marker:IsVisible() and marker.labels[1].text == "Secret 300 yd", "Correct secret distance and bearing")
+    end
+    facing = 0
+    tracker:CycleLocation()
+    local eastX = assert(marker.point)[4]
+    tracker:CycleLocation()
+    assert(eastX > marker.point[4], "An eastern secret appears right of a western secret")
+    tracker:CycleLocation()
+    assert(marker.labels[1].text:match(" >$") and marker.labels[1].point[1] == "RIGHT",
+        "The right-edge cue and label face inward")
+    tracker:CycleLocation()
+    assert(marker.labels[1].text:match("^< "), "The left-edge cue is visible")
+    tracker:CycleLocation()
+    assert(marker.labels[1].text == "Secret 0 yd" and marker.point[4] == 0, "Arrival stays centered")
+    tracker:CycleLocation()
+    assert(not marker:IsVisible() and heading:IsVisible(), "Cross-continent locations hide the marker")
+    tracker:CycleLocation()
+    unavailable = true
+    advance()
+    assert(not marker:IsVisible() and heading:IsVisible(), "Missing player position only hides the marker")
+    unavailable = false
+    advance()
+    assert(marker:IsVisible(), "The marker recovers with player position")
+
+    facing = secret
+    advance()
+    assert(not heading:IsVisible() and not marker:IsVisible(), "Unreadable facing hides moving layers")
+    facing = nil
+    advance()
+    assert(not heading:IsVisible(), "Missing facing hides heading")
+    facing = 0
+    advance()
+    assert(heading:IsVisible() and marker:IsVisible(), "Heading recovers with the marker")
+    slash("toggle")
+    assert(not frame:IsVisible() and not frame.scripts.OnUpdate and ForeverCompassDB.enabled == false,
+        "Disabling an active secret's HUD stops updates")
+    slash("toggle")
+    assert(frame:IsVisible() and ForeverCompassDB.enabled == true, "The active secret's HUD can be restored")
+
+    tracker:Stop()
+    tracker:SetReveal("clue")
+    playerX, playerY = 0, 0
+    local lastSampleCount = playerSamples
+    advance()
+    assert(not frame:IsVisible() and not marker:IsVisible() and not frame.scripts.OnUpdate
+        and playerSamples == lastSampleCount, "Pausing the secret stops live HUD updates")
+end
+
 slash("toggle")
-assert(not frame:IsVisible() and not frame.scripts.OnUpdate and ForeverCompassDB.enabled == false, "Hidden display stops updates and persists")
-slash("toggle")
-advance()
-assert(frame:IsVisible() and ForeverCompassDB.enabled == true, "Shown setting persists")
 slash("move")
-assert(frame.mouseEnabled, "Move enables dragging")
+assert(frame:IsVisible() and frame.mouseEnabled and not marker:IsVisible() and not ForeverCompassDB.enabled,
+    "Move previews the idle HUD without changing its saved visibility")
 frame.scripts.OnDragStart(frame)
 frame.centerX, frame.centerY = 715, 404
 frame.scripts.OnDragStop(frame)
 assert(ForeverCompassDB.x == 75 and ForeverCompassDB.y == 44, "Dragged position persists")
 slash("move")
-assert(not frame.mouseEnabled, "Move toggle locks HUD")
+assert(not frame.mouseEnabled and not frame:IsVisible() and not ForeverCompassDB.enabled,
+    "Locking the idle HUD hides the placement preview and preserves the preference")
+slash("toggle")
 slash("reset")
 assert(ForeverCompassDB.x == 0 and ForeverCompassDB.y == 88, "Reset restores default position")
-assert(frame:IsVisible(), "Reset keeps visible compass")
-
-local function questMarker(slot)
-    return assert(_G["SecretsCompassQuest" .. slot])
-end
-local function questText(slot, expected)
-    local quest = questMarker(slot)
-    assert(quest:IsVisible(), "Expected visible quest marker " .. slot)
-    local actual = quest.labels[1].text
-    assert(actual == expected, "Quest " .. slot .. " expected " .. expected .. ", got " .. tostring(actual))
-end
-
-facing = 0
-pin(300, 0)
-watched = { 10, 11, 12, 13, 14, 15, 16 }
-questMaps = { [13] = 3, [14] = 4 }
-completed[15] = true
-questPOIs[1] = {
-    { questID = 10, inProgress = true, x = 0.12, y = -0.05 },
-    { questID = 10, inProgress = true, x = 0.12, y = -0.05 },
-    { questID = 10, inProgress = true, x = 0.40, y = 0 },
-    { questID = 11, x = secret, y = 0 },
-    { questID = 12, x = 0.07, y = 0, isQuestStart = true },
-    { questID = 15, x = 0.01, y = 0 },
-    { questID = 99, x = 0.02, y = 0 },
-}
-questPOIs[3] = { { questID = 13, inProgress = true, x = 0.24, y = 0.10 } }
-questPOIs[4] = { { questID = 14, inProgress = true, x = 0.25, y = 0 } }
-questWaypoints[10] = { 1, 0.003, 0 }
-questWaypoints[16] = { 1, 0.50, 0 }
-
-event("QUEST_WATCH_LIST_CHANGED")
-advance()
-questText(1, "! 130 yd")
-questText(2, "! 260 yd")
-questText(3, "! 400 yd")
-assert(questMarker(1).point[4] > 0 and questMarker(2).point[4] < 0, "Each objective uses its own bearing")
-assert(marker:IsVisible() and marker.labels[1].text == "300 yd", "Manual pin keeps its own distance")
-
-playerX = 0.12
-advance()
-questText(1, "! 50 yd")
-questText(2, "! 156 yd")
-questText(3, "! 280 yd")
-assert(marker.labels[1].text == "180 yd", "Manual and quest distances update as the player moves")
-playerX = 0
-superTracked = 16
-event("SUPER_TRACKING_CHANGED")
-advance()
-questText(1, "~ 500 yd")
-questText(2, "! 130 yd")
-questText(3, "! 260 yd")
-
-unavailable = true
-advance()
-assert(not questMarker(1):IsVisible() and not marker:IsVisible(), "Missing player location hides destinations")
-unavailable = false
-advance()
-questText(1, "~ 500 yd")
-
-watched, superTracked = { 10, 13, 14, 15 }, nil
-completed[10] = true
-event("QUEST_LOG_UPDATE")
-advance()
-questText(1, "! 260 yd")
-assert(not questMarker(2):IsVisible() and not questMarker(3):IsVisible(), "Turn-ins and cross-world destinations hidden")
-questPOIs[3] = {}
-event("QUEST_POI_UPDATE")
-advance()
-assert(not questMarker(1):IsVisible() and marker:IsVisible(), "Removed POI clears its quest slot only")
-
-watched = { 14, 17, 18 }
-questWaypoints[14] = { 1, 0.61, 0 }
-questPOIs[1] = {
-    { questID = 17, inProgress = true, x = -0.3, y = -0.12 },
-    { questID = 18, inProgress = true, x = -0.5, y = 0.18 },
-}
-event("QUEST_WATCH_LIST_CHANGED")
-advance()
-questText(1, "! 323 yd >")
-questText(2, "< ! 531 yd")
-questText(3, "~ 610 yd")
-local rightQuestAnchor = questMarker(1).labels[1].point
-local leftQuestAnchor = questMarker(2).labels[1].point
-assert(rightQuestAnchor[1] == "RIGHT" and leftQuestAnchor[1] == "LEFT",
-    "Quest labels anchor inward at both compass edges")
-
-currentMap = 4
-advance()
-questText(1, "! 250 yd")
-assert(not questMarker(2):IsVisible() and not marker:IsVisible(), "Zone change resolves the original quest POI in the new world space")
-currentMap = 1
-advance()
-questText(3, "~ 610 yd")
-
-C_QuestLog.GetQuestsOnMap, GetQuestUiMapID = nil, nil
-watched = { 16 }
-event("QUEST_WATCH_LIST_CHANGED")
-advance()
-questText(1, "~ 500 yd")
-assert(marker:IsVisible(), "Manual pin survives missing POI capability")
-
-C_QuestLog.GetQuestsOnMap = function(mapID) return questPOIs[mapID] end
-watched = { 21, 22, 23, 24, 25, 26, 27, 28 }
-superTracked = 29
-questPOIs[1] = {}
-for index = 1, 8 do
-    questPOIs[1][index] = {
-        questID = watched[index], inProgress = true,
-        x = index * (index <= 6 and 0.04 or 0.01),
-        y = index == 7 and 0.80 or (index == 8 and -0.85 or 0),
-    }
-end
-questPOIs[1][9] = { questID = 29, inProgress = true, x = 0.01, y = 0 }
-event("QUEST_WATCH_LIST_CHANGED")
-advance()
-
-local allocated = {}
-local centerRows = {}
-for slot = 1, 8 do
-    local quest = questMarker(slot)
-    assert(quest:IsVisible(), "All eight watched objective markers visible")
-    allocated[slot] = quest
-    if slot <= 6 then
-        questText(slot, "! " .. (slot * 40) .. " yd")
-        local y = quest.point[5]
-        for _, otherY in ipairs(centerRows) do
-            assert(math.abs(y - otherY) >= 12, "Same-bearing labels have distinct rows")
-        end
-        centerRows[#centerRows + 1] = y
-    end
-end
-questText(7, "! 803 yd")
-questText(8, "! 854 yd")
-assert(not SecretsCompassQuest9 or not SecretsCompassQuest9:IsVisible(), "Unwatched super-tracked quest is excluded")
-assert(marker:IsVisible() and marker.labels[1].text == "300 yd", "Manual pin stays independent")
-local function labelBounds(quest)
-    local label = quest.labels[1]
-    local scale = label.textScale or label.scale or quest.scale or 1
-    local width, height = #(label.text or "") * 6 * scale, 12 * scale
-    local x, y = quest.point[4], quest.point[5]
-    local anchor = label.point[1]
-    local left = anchor == "LEFT" and x or (anchor == "RIGHT" and x - width or x - width / 2)
-    return left, left + width, y - height / 2, y + height / 2
-end
-for slot = 1, 8 do
-    local l, r, b, t = labelBounds(allocated[slot])
-    for previous = 1, slot - 1 do
-        local otherL, otherR, otherB, otherT = labelBounds(allocated[previous])
-        assert(r <= otherL or l >= otherR or t <= otherB or b >= otherT, "Objective distance labels do not overlap")
-    end
-end
-
-playerX = 0.01
-advance()
-questText(4, "! 150 yd")
-questText(6, "! 230 yd")
-playerX = 0
-
-local originalWatches = watched
-watched = { 21 }
-event("QUEST_WATCH_LIST_CHANGED")
-advance()
-assert(questMarker(1):IsVisible())
-for slot = 2, 8 do
-    assert(not allocated[slot]:IsVisible(), "Unwatching hides surplus quest markers")
-end
-watched = originalWatches
-event("QUEST_WATCH_LIST_CHANGED")
-advance()
-for slot = 1, 8 do
-    assert(questMarker(slot) == allocated[slot] and allocated[slot]:IsVisible(), "Rewatching reuses marker frames")
-end
-facing = nil
-advance()
-for slot = 1, 8 do
-    assert(not allocated[slot]:IsVisible(), "Missing facing hides every quest marker")
-end
-facing = 0
-advance()
-questText(8, "! 854 yd")
-
-frame.centerY = 140
-UIParent:SetHeight(480)
-watched, questPOIs[1] = {}, {}
-for index = 1, 24 do
-    watched[index] = 100 + index
-    questPOIs[1][index] = { questID = watched[index], inProgress = true, x = 0.4, y = -index * 0.001 }
-end
-event("QUEST_WATCH_LIST_CHANGED")
-advance()
-for slot = 1, #watched do
-    local quest = questMarker(slot)
-    assert(quest:IsVisible(), "Dense groups retain every objective")
-    local _, _, bottom, top = labelBounds(quest)
-    assert(bottom + frame.centerY >= 0 and top + frame.centerY <= UIParent:GetHeight(),
-        "Dense objective rows use available viewport space")
-end
-
-local function checkViewport(count)
-    local scale = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
-    local x, y = frame:GetCenter()
-    for slot = 1, count do
-        local quest = questMarker(slot)
-        assert(quest:IsVisible(), "All dense quest labels remain visible")
-        local l, r, b, t = labelBounds(quest)
-        assert((l + x) * scale >= -0.01 and (r + x) * scale <= UIParent:GetWidth() + 0.01
-            and (b + y) * scale >= -0.01 and (t + y) * scale <= UIParent:GetHeight() + 0.01,
-            "Objective label " .. slot .. " is within both viewport dimensions")
-        local leader = quest.lines[1]
-        if leader:IsVisible() then
-            local towardBearing = leader.start[3] - quest.point[4]
-            assert(leader.finish[3] * towardBearing > 0, "Leader ends on the side of text facing its bearing")
-        end
-        for previous = 1, slot - 1 do
-            local otherL, otherR, otherB, otherT = labelBounds(questMarker(previous))
-            assert(r <= otherL + 0.01 or l >= otherR - 0.01 or t <= otherB + 0.01 or b >= otherT - 0.01,
-                "Crowded objective labels do not overlap")
-        end
-    end
-end
-
-UIParent:SetSize(640, 360)
-UIParent.centerX, UIParent.centerY = 320, 180
-frame.centerX, frame.centerY = 340, 140
-watched, questPOIs[1] = { 210 }, {}
-for index = 1, 64 do
-    questPOIs[1][index] = { questID = 210, inProgress = true, x = index / 100, y = 0 }
-end
-event("QUEST_WATCH_LIST_CHANGED")
-advance()
-checkViewport(64)
-local firstX = 0
-local movedToColumn = false
-for slot = 1, 64 do
-    questText(slot, "! " .. (slot * 10) .. " yd")
-    movedToColumn = movedToColumn or math.abs(questMarker(slot).point[4] - firstX) > 20
-end
-assert(movedToColumn, "Co-bearing overflow expands horizontally")
-local shifted = 0
-for slot = 1, 64 do
-    local quest = questMarker(slot)
-    if math.abs(quest.point[4] - firstX) > 20 then
-        local line = quest.lines[1]
-        assert(line and line:IsVisible(), "Shifted objective keeps a visible bearing leader")
-        assert(math.abs(line.start[3]) < 0.01, "Leader starts at the true North bearing")
-        shifted = shifted + 1
-    end
-end
-assert(shifted > 0)
-assert(marker:IsVisible() and marker.labels[1].text == "300 yd", "Dense layout keeps the manual pin")
-
-facing = -math.rad(155)
-advance()
-checkViewport(64)
-questText(64, "< ! 640 yd")
-local leftLeader = questMarker(64).lines[1]
-if leftLeader:IsVisible() then
-    assert(leftLeader.start[3] < 0, "Left overflow connector retains its true compass side")
-end
-facing = math.rad(155)
-advance()
-checkViewport(64)
-questText(64, "! 640 yd >")
-local rightLeader = questMarker(64).lines[1]
-if rightLeader:IsVisible() then
-    assert(rightLeader.start[3] > 0, "Right overflow connector retains its true compass side")
-end
-frame.centerX, frame.centerY = 300, 210
-UIParent:SetSize(600, 350)
-UIParent.centerX, UIParent.centerY = 300, 175
-advance()
-checkViewport(64)
-
-frame.centerX, frame.centerY = 120, 95
-UIParent:SetSize(240, 190)
-UIParent.centerX, UIParent.centerY = 120, 95
-advance()
-checkViewport(64)
-assert(questMarker(64).labels[1].textScale < 1, "Very small area compacts label text")
-playerX = 0.01
-advance()
-checkViewport(64)
-playerX = 0
-frame.centerX, frame.centerY = 600, 360
-UIParent:SetSize(1200, 720)
-UIParent.centerX, UIParent.centerY = 600, 360
-advance()
-checkViewport(64)
-assert(questMarker(64).labels[1].textScale == 1, "More room restores original text scale")
-
-UIParent:SetSize(0, 0)
-questPOIs[1][65] = { questID = 210, inProgress = true, x = 0.65, y = 0 }
-event("QUEST_POI_UPDATE")
-advance()
-facing = nil
-advance()
-UIParent:SetSize(1200, 720)
-facing = 0
-advance()
-checkViewport(65)
-questText(65, "! 650 yd")
-
-watched = { 210 }
-questPOIs[1] = { { questID = 210, inProgress = true, x = 0.3, y = 0 } }
-event("QUEST_POI_UPDATE")
-advance()
-questText(1, "! 300 yd")
-frame.centerX, frame.centerY = 340, 140
-UIParent:SetSize(640, 360)
-UIParent.centerX, UIParent.centerY = 320, 180
-
-local testLabel = assert(SecretsCompassTestLabel)
-assert(not testLabel:IsShown(), "Test mode starts off")
-slash("test")
-assert(testLabel:IsVisible(), "Test mode identified")
-checkViewport(64)
-questText(1, "! 10 yd")
-questText(64, "! 640 yd")
-assert(marker:IsVisible() and marker.labels[1].text == "300 yd", "Test mode preserves manual pin")
-local testColumns = false
-for slot = 1, 64 do
-    local leader = questMarker(slot).lines[1]
-    if leader:IsVisible() then
-        assert(math.abs(leader.start[3]) < 0.01, "Synthetic bearing starts at compass center")
-        testColumns = true
-    end
-end
-assert(testColumns, "Test mode reaches actual overflow columns")
-facing = math.rad(155)
-advance()
-questText(64, "! 640 yd")
-checkViewport(64)
-
-facing = nil
-advance()
-questText(64, "! 640 yd")
-checkViewport(64)
-
-slash("test 1")
-questText(1, "! 10 yd")
-assert(not questMarker(2):IsVisible(), "Explicit count replaces the synthetic batch")
-slash("test 128")
-questText(128, "! 1280 yd")
-checkViewport(128)
-for _, invalid in ipairs({ "test 0", "test 129", "test 1.5", "test 1e2", "test 64 extra" }) do
-    slash(invalid)
-    questText(128, "! 1280 yd")
-end
-
-facing = 0
-slash("test off")
-questText(1, "! 300 yd")
-assert(not questMarker(2):IsVisible() and not testLabel:IsShown(), "Exit immediately restores live objectives")
-slash("toggle")
-assert(not frame:IsVisible() and ForeverCompassDB.enabled == false)
-slash("test")
-assert(frame:IsVisible() and testLabel:IsVisible() and ForeverCompassDB.enabled == false,
-    "Hidden compass shows a session-only test override")
-questText(64, "! 640 yd")
-slash("test")
-assert(not frame:IsVisible() and not testLabel:IsShown() and ForeverCompassDB.enabled == false,
-    "Bare command restores hidden state")
-slash("toggle")
-questText(1, "! 300 yd")
-
-local function checkCenteredOverflow(count, center, requireBelow, maxRows)
-    checkViewport(count)
-    local rows = {}
-    for slot = 1, count do
-        questText(slot, "! " .. (slot * 10) .. " yd")
-        local quest = questMarker(slot)
-        local left, right, _, top = labelBounds(quest)
-        assert(left >= center - 220.01 and right <= center + 220.01,
-            "Overflow stays within the 440-unit centered block")
-        if requireBelow then
-            assert(top <= -75.99, "Overflow text stays below the compass")
-        end
-        local y = quest.point[5]
-        local row = rows[y] or { left = left, right = right }
-        row.left, row.right = math.min(row.left, left), math.max(row.right, right)
-        rows[y] = row
-    end
-    if maxRows then
-        local rowCount = 0
-        for _ in pairs(rows) do rowCount = rowCount + 1 end
-        assert(rowCount <= maxRows, "Full-size overflow wraps into a shorter block")
-        local _, _, bottom = labelBounds(questMarker(count))
-        assert(bottom + frame.centerY >= 240, "Desktop overflow clears the lower HUD area")
-    end
-    for _, row in pairs(rows) do
-        assert(math.abs((row.left + row.right) / 2 - center) <= 4,
-            "Each row, including the last, is centered")
-    end
-end
-
-UIParent:SetSize(1920, 1080)
-UIParent.centerX, UIParent.centerY = 960, 540
-frame.centerX, frame.centerY = 960, 627
-slash("test")
-checkCenteredOverflow(64, 0, true, 10)
-slash("test 128")
-checkCenteredOverflow(128, 0, true, 22)
-assert(questMarker(128).labels[1].textScale == 1, "Normal desktop viewport preserves full-size distance text")
-
-UIParent:SetSize(640, 360)
-UIParent.centerX, UIParent.centerY = 320, 180
-frame.centerX, frame.centerY = 100, 140
-advance()
-checkCenteredOverflow(128, 128, true)
-frame.centerY = 40
-advance()
-checkCenteredOverflow(128, 128, false)
-slash("test off")
-questText(1, "! 300 yd")
-
 local function click(control, button)
     local handler = assert(control.scripts.OnClick, "Expected click handler")
     handler(control, button or "LeftButton")
@@ -835,35 +446,19 @@ assert(ForeverCompassDB.opacity == 1 and frame.alpha == 1 and panel.preview.artw
     "Transparency is bounded at 0%")
 
 click(minimapButton)
-assert(frame:IsVisible() and panel:IsVisible(), "Visibility control leaves settings available")
-facing = 0
-pin(300, 0)
-questText(1, "! 300 yd")
-assert(marker:IsVisible())
-controls.showWaypoint:SetChecked(false)
-click(controls.showWaypoint)
-assert(not marker:IsVisible() and ForeverCompassDB.showWaypoint == false)
-controls.showWaypoint:SetChecked(true)
-click(controls.showWaypoint)
-assert(marker:IsVisible())
-controls.showQuests:SetChecked(false)
-click(controls.showQuests)
-assert(not questMarker(1):IsVisible() and ForeverCompassDB.showQuests == false)
-click(controls.test)
-questText(64, "! 640 yd")
-click(controls.test)
-assert(not questMarker(1):IsVisible(), "Stopping the preview restores hidden quest labels")
-controls.showQuests:SetChecked(true)
-click(controls.showQuests)
-questText(1, "! 300 yd")
+assert(ForeverCompassDB.enabled and not frame:IsVisible() and panel:IsVisible(),
+    "Enabling the HUD without a secret leaves settings available")
+assert(not controls.showQuests and not controls.showWaypoint and not controls.test
+    and panel.preview.secret:IsVisible() and panel.preview.secret:GetText() == "Secret 240 yd",
+    "Settings preview depicts a secret and omits unrelated tracking controls")
 controls.showCardinals:SetChecked(false)
 click(controls.showCardinals)
-for _, label in ipairs(heading.labels) do
+for _, label in ipairs(panel.preview.heading) do
     assert(not label:IsVisible(), "Cardinal labels hide")
 end
 controls.showCardinals:SetChecked(true)
 click(controls.showCardinals)
-assert(math.abs(labelX("N")) < 0.01, "Cardinal labels return without a heading change")
+assert(panel.preview.heading[2]:IsVisible(), "Cardinal labels return in the preview")
 
 controls.showMinimap:SetChecked(false)
 click(controls.showMinimap)
@@ -916,15 +511,7 @@ frame.centerX, frame.centerY = nil, nil
 for _, percent in ipairs({ 60, 150 }) do
     size:SetValue(percent)
     assert(ForeverCompassDB.scale == percent / 100 and controls.sizeValue:GetText() == percent .. "%")
-    for _, count in ipairs({ 64, 128 }) do
-        slash("test " .. count)
-        checkViewport(count)
-        for slot = 1, count do
-            questText(slot, "! " .. (slot * 10) .. " yd")
-        end
-    end
 end
-slash("test off")
 
 click(controls.move)
 slash("reset")
@@ -1063,9 +650,9 @@ do
                 and choices[16].id == "fizsprockets-notes" and #choices[16].steps == 5,
                 "Horde receives the signpost and mine routes after the existing routes")
         end
-        local lastRow = secrets.controls.routes[choices[expectedCount].id]
+        local lastRow = secrets.controls.routes[isAlliance and "silver-of-the-waves" or "whispering-horror-residue"]
         local _, _, rowY = lastRow:GetPoint()
-        assert(secrets:GetHeight() == (isAlliance and 891 or 861)
+        assert(secrets:GetHeight() == (isAlliance and 1011 or 981)
             and not secrets.controls.routePageNext:IsVisible()
             and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
             "The last route row fits above navigation")
@@ -1318,47 +905,108 @@ end
 do
     local controls = secrets.controls
     local previousPage, nextPage, range = controls.routePagePrevious, controls.routePageNext, controls.routePageRange
-    local choices = namespace.StandaloneSecrets()
-    local lateRoute = choices[#choices]
+    local function displayOrder(isAlliance)
+        local order = {
+            { "Pets", {
+                isAlliance and "baby-crocolisk" or "bitter-baitling",
+                isAlliance and "bitter-baitling" or "condor-hatchling",
+                isAlliance and "condor-hatchling" or "excitable-slime",
+                "musical-gustjumper", "tallstrider-hatchling", "weevil-k-neevil",
+            } },
+            { "Toys & Collectibles", isAlliance
+                and { "a-taste-of-home", "alcaz-operative-insignia:alliance", "night-watchmans-torch",
+                    "scarlet-banner", "travelers-symbols" }
+                or { "alcaz-operative-insignia:horde", "night-watchmans-torch", "scarlet-banner", "travelers-symbols" },
+            },
+            { "Gear & Utility", { "blessing-of-kalimdor",
+                "cozy-sleeping-bag:" .. (isAlliance and "alliance" or "horde"),
+                "gift-of-galloping", isAlliance and "malignant-root" or nil,
+            } },
+            { "Professions", { isAlliance and "dwarven-tradeskill-signpost" or "orcish-tradeskill-signpost",
+                "savory-whimsyfin-delight",
+            } },
+            { "Quests & Mysteries", isAlliance
+                and { "applejack-still", "dawn-waker-eluviana", "lyn-the-ignored", "manual-scavenger-hunt",
+                    "silver-of-the-waves" }
+                or { "dawn-waker-eluviana", "fizsprockets-notes", "lyn-the-ignored", "manual-scavenger-hunt",
+                    "bloody-map", "whispering-horror-residue" },
+            },
+        }
+        local choices = {}
+        for _, group in ipairs(order) do
+            for _, id in ipairs(group[2]) do
+                choices[#choices + 1] = { id = id, heading = group[1] }
+            end
+        end
+        return choices
+    end
+    local choices = displayOrder(false)
+    local lateRoute = assert(controls.routes["whispering-horror-residue"])
     local function assertPage(first, last, height)
         assert(secrets:GetHeight() == height and previousPage:IsVisible() and nextPage:IsVisible() and range:IsVisible(),
             "Only an overflowing catalog shows the pager")
         assert(range:GetText() == ("%d–%d of %d"):format(first, last, #choices),
-            "The pager shows the displayed route range")
+            "The pager counts routes without category headings")
         assert(previousPage.enabled == (first > 1) and nextPage.enabled == (last < #choices),
             "Page controls stop at the first and last pages")
+        local headings, previousBottom = {}, nil
         for index, route in ipairs(choices) do
-            assert(controls.routes[route.id]:IsVisible() == (index >= first and index <= last),
-                "Only rows on the current page are visible")
+            local row = controls.routes[route.id]
+            assert(row:IsVisible() == (index >= first and index <= last), "Only this page's routes are visible")
+            if row:IsVisible() then
+                local _, _, rowY = row:GetPoint()
+                if not headings[route.heading] then
+                    local heading = assert(controls.routeHeadings[route.heading])
+                    local _, _, headingY = heading:GetPoint()
+                    assert(heading:GetText() == route.heading and headingY - heading:GetHeight() >= rowY
+                        and (not previousBottom or previousBottom >= headingY), "Category heading sits above its first route")
+                    headings[route.heading] = true
+                end
+                assert(not previousBottom or previousBottom >= rowY, "Routes are alphabetical within each category")
+                previousBottom = rowY - row:GetHeight()
+            end
         end
-        local lastRow = controls.routes[choices[last].id]
-        local _, _, rowY = lastRow:GetPoint()
+        for name, heading in pairs(controls.routeHeadings) do
+            assert(heading:IsVisible() == not not headings[name], "Each visible heading has a route on the page")
+        end
         local _, _, pagerY = nextPage:GetPoint()
-        assert(26 - rowY + lastRow:GetHeight() <= height - pagerY - nextPage:GetHeight(),
-            "Route rows clear the pager")
+        assert(26 - previousBottom <= height - pagerY - nextPage:GetHeight(), "Route rows clear the pager")
     end
 
-    SecretCompassSecretDB.finishedRoutes[lateRoute.id] = { sourceURL = lateRoute.sourceURL }
+    local catalog = namespace.StandaloneSecrets()
+    for _, route in ipairs(catalog) do
+        if route.id == "whispering-horror-residue" then
+            SecretCompassSecretDB.finishedRoutes[route.id] = { sourceURL = route.sourceURL }
+        end
+    end
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(1, 14, 681)
+    assertPage(1, 12, 693)
     assert(secrets.progress:GetText() == "1 of 21 Built-In Routes Finished",
         "Completion includes finished routes off the current page")
-    SecretCompassSecretDB.finishedRoutes[lateRoute.id] = nil
+    SecretCompassSecretDB.finishedRoutes["whispering-horror-residue"] = nil
     click(nextPage)
-    assertPage(15, 21, 681)
-    local condor = controls.routes["condor-hatchling"]
-    click(condor)
-    assert(secrets.routeTitle:GetText() == "Condor Hatchling" and not range:IsVisible()
-        and not previousPage:IsVisible() and not nextPage:IsVisible() and not condor:IsVisible(),
+    assertPage(13, 21, 693)
+    click(lateRoute)
+    assert(secrets.routeTitle:GetText() == "Whispering Horror Residue" and not range:IsVisible()
+        and not previousPage:IsVisible() and not nextPage:IsVisible() and not lateRoute:IsVisible(),
         "Tracking a route from a later page hides the catalog and pager")
+    for _, heading in pairs(controls.routeHeadings) do
+        assert(not heading:IsVisible(), "Tracking hides category headings")
+    end
+    click(controls.stop)
+    assertPage(13, 21, 693)
+    click(previousPage)
+    assertPage(1, 12, 693)
+
+    click(controls.routes["condor-hatchling"])
     click(controls.revealCoordinates)
     click(controls.location)
     click(controls.mapCommand)
     assert(controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90",
         "Next Location reaches an alternate Lord Condar search area")
     click(controls.stop)
-    assertPage(15, 21, 681)
+    assertPage(1, 12, 693)
 
     click(controls.routes["bitter-baitling"])
     click(controls.revealCoordinates)
@@ -1373,33 +1021,33 @@ do
     assert(controls.mapCommandInput:GetText() == "/mappin 1434 26.70 76.30",
         "The final step leads to Jang for the prize exchange")
     click(controls.stop)
-    assertPage(15, 21, 681)
-    click(previousPage)
-    assertPage(1, 14, 681)
+    assertPage(1, 12, 693)
 
     faction = "Alliance"
-    choices = namespace.StandaloneSecrets()
+    choices = displayOrder(true)
     UIParent:SetHeight(480)
     fireAddonEvent("UI_SCALE_CHANGED")
-    assertPage(1, 6, 441)
+    assertPage(1, 6, 465)
     click(nextPage)
-    assertPage(7, 12, 441)
+    assertPage(7, 11, 465)
     click(nextPage)
-    assertPage(13, 18, 441)
+    assertPage(12, 16, 465)
     click(nextPage)
-    assertPage(19, 22, 441)
+    assertPage(17, 21, 465)
+    click(nextPage)
+    assertPage(22, 22, 465)
     faction = "Horde"
-    choices = namespace.StandaloneSecrets()
+    choices = displayOrder(false)
     slash("secrets")
     slash("secrets")
-    assertPage(19, 21, 441)
+    assertPage(16, 21, 465)
     assert(not controls.routes["baby-crocolisk"]:IsVisible(), "The Alliance route stays hidden on the Horde page")
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(15, 21, 681)
+    assertPage(13, 21, 693)
     UIParent:SetHeight(1080)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assert(not range:IsVisible() and cozyButton:IsVisible() and controls.routes[lateRoute.id]:IsVisible(),
+    assert(not range:IsVisible() and cozyButton:IsVisible() and lateRoute:IsVisible(),
         "A tall viewport restores the full catalog")
 end
 acceptedQuests[79007] = true
@@ -1442,10 +1090,6 @@ assert(secrets.note:GetText() ~= "", "Full mode reveals the instruction")
 click(secrets.controls.revealClue)
 assert(secrets.note:GetText() == "" and not marker.labels[1]:GetText():find(" yd", 1, true),
     "Returning to Clue removes already revealed details")
-slash("test 64")
-assert(not hunt:IsVisible(), "Overflow test suppresses the compact hunt HUD")
-slash("test off")
-assert(hunt:IsVisible(), "Leaving overflow mode restores the compact hunt HUD")
 local edit, go = assert(secrets.controls.jumpInput), assert(secrets.controls.jumpGo)
 assert(edit:IsVisible() and go:IsVisible() and edit.autoFocus == false and not go.enabled)
 for _, invalid in ipairs({"0", "8", "1e0", "1.0", "-1", "1289", "foo"}) do
@@ -1657,9 +1301,9 @@ assert(secrets.stepTitle:GetText() == "Return the note" and not marker:IsVisible
 assert(secrets.controls.next:GetText() == "Finish")
 slash("next")
 advance()
-assert(not SecretCompassSecretDB.route and waypoint == savedPin and marker:IsVisible()
-    and not marker.labels[1]:GetText():find("Secret", 1, true), "Finishing restores normal waypoint rendering")
-
+assert(not SecretCompassSecretDB.route and waypoint == savedPin and not frame:IsVisible()
+    and not marker:IsVisible() and not frame.scripts.OnUpdate,
+    "Finishing the secret hides the HUD and preserves the player map pin")
 local cozy = namespace.StandaloneSecrets()[1]
 local importedCozy = {
     name = "Cozy Sleeping Bag", questID = 79976, guideURL = cozy.sourceURL,
@@ -1895,4 +1539,4 @@ do
     TomTom = nil
 end
 
-print("SecretsCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, spoiler levels, verified progress, the SecretChecklist companion, and external waypoint navigation")
+print("SecretsCompass mocks passed: secret-only tracking, HUD controls, categorized standalone secrets, spoiler levels, verified progress, the SecretChecklist companion, and external waypoint navigation")
