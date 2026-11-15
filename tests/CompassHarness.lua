@@ -1914,7 +1914,7 @@ do
     click(journal.controls.stop)
     local bookmark = assert(saved.lastPaused)
     assert(journal.controls.continueLast:IsVisible(), "Pausing creates the Continue Last Secret shortcut")
-    assertResumeDetails(journal, condor.title, "Step 1 of 1")
+    assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
 
     saved.lastPaused = nil
     journal = reloadJournal(saved)
@@ -1933,7 +1933,7 @@ do
     local shortcut = journal.controls.continueLast
     assert(shortcut:IsVisible() and shortcut:GetText() == "Continue Last Secret"
         and journal.controls.routeEmpty:IsVisible(), "The restored shortcut is independent of browse filters")
-    assertResumeDetails(journal, condor.title, "Step 1 of 1")
+    assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
     click(shortcut)
     assertResumeDetails(journal)
     assert(saved.route.id == condor.id and saved.index == 1 and saved.locationIndex == 2
@@ -1953,13 +1953,17 @@ do
             } },
         },
     }
-    assert(runtimeTracker:Track(imported) and runtimeTracker:Jump(2) and runtimeTracker:CycleLocation())
+    assert(runtimeTracker:Track(imported))
+    click(journal.controls.stop)
+    assertResumeDetails(journal, imported.title, "Step 1 of 2")
+    click(journal.controls.continueLast)
+    assert(runtimeTracker:Jump(2) and runtimeTracker:CycleLocation())
     runtimeTracker:SetReveal("coordinates")
     click(journal.controls.stop)
-    assertResumeDetails(journal, imported.title, "Step 2 of 2")
+    assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2")
     SecretChecklist = nil
     journal = reloadJournal(saved)
-    assertResumeDetails(journal, imported.title, "Step 2 of 2")
+    assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2")
     click(journal.controls.continueLast)
     assertResumeDetails(journal)
     assert(saved.route.id == imported.id and saved.route.title == condor.title and saved.index == 2

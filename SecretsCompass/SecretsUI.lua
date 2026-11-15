@@ -597,15 +597,25 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
         for _, heading in pairs(controls.routeHeadings) do
             heading:Hide()
         end
-        local pausedRoute, pausedIndex
+        local pausedRoute, pausedIndex, pausedLocation
         if not tracking then
-            pausedRoute, pausedIndex = api.getLastPausedRoute()
+            pausedRoute, pausedIndex, pausedLocation = api.getLastPausedRoute()
         end
         local canContinue = pausedRoute ~= nil
+        local pausedStepText = ""
+        if canContinue then
+            pausedStepText = ("Step %d of %d"):format(pausedIndex, #pausedRoute.steps)
+            local waypointCount = #pausedRoute.steps[pausedIndex].waypoints
+            if waypointCount > 1 and type(pausedLocation) == "number"
+                and pausedLocation >= 1 and pausedLocation <= waypointCount
+                and pausedLocation == math.floor(pausedLocation) then
+                pausedStepText = pausedStepText .. (" · Location %d of %d"):format(pausedLocation, waypointCount)
+            end
+        end
         controls.continueLast:SetShown(canContinue)
         controls.pausedRouteTitle:SetText(canContinue and pausedRoute.title or "")
         controls.pausedRouteTitle:SetShown(canContinue)
-        controls.pausedStep:SetText(canContinue and ("Step %d of %d"):format(pausedIndex, #pausedRoute.steps) or "")
+        controls.pausedStep:SetText(pausedStepText)
         controls.pausedStep:SetShown(canContinue)
         panel.routeTitle:SetHeight(canContinue and 18 or 34)
         panel.progress:ClearAllPoints()
