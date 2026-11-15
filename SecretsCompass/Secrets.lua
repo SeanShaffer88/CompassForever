@@ -1,5 +1,5 @@
 local _, ns = ...
-local maxSteps, maxLocations, maxRevealRoutes = 128, 24, 256
+local maxSteps, maxLocations, maxRevealRoutes, maxCheckpoints = 128, 24, 256, 256
 local revealLevels = { clue = true, distance = true, coordinates = true, full = true }
 
 local function readable(value)
@@ -125,6 +125,64 @@ local function verifiedComplete(step)
             or (step.completionOnAccept and questCheck(C_QuestLog.IsOnQuest, questID)))
 end
 
+local function normalizeCheckpoint(raw)
+    if not readable(raw) or type(raw) ~= "table" or not readable(raw.sourceURL) then
+        return
+    end
+    local title, sourceURL = safeText(raw.stepTitle, 180), safeURL(raw.sourceURL)
+    if not title or (raw.sourceURL ~= nil and not sourceURL) then
+        return
+    end
+    if not readable(raw.completionQuestID) or (raw.completionQuestID ~= nil and not validID(raw.completionQuestID)) then
+        return
+    end
+    return {
+        sourceURL = sourceURL, stepTitle = title, completionQuestID = raw.completionQuestID,
+        waypoint = ns.NormalizeSecretWaypoint(raw.waypoint),
+    }
+end
+
+local function uniqueStepIndex(route, title, questID)
+    local selected
+    for index, step in ipairs(route.steps) do
+        if step.title == title and step.completionQuestID == questID then
+            if selected then
+                return
+            end
+            selected = index
+        end
+    end
+    return selected
+end
+
+local function checkpointFor(route, index, locationIndex)
+    local step = route.steps[index]
+    if uniqueStepIndex(route, step.title, step.completionQuestID) then
+        return {
+            sourceURL = route.sourceURL, stepTitle = step.title, completionQuestID = step.completionQuestID,
+            waypoint = ns.NormalizeSecretWaypoint(step.waypoints[locationIndex]),
+        }
+    end
+end
+
+local function matchingCheckpoint(route, checkpoint)
+    if not checkpoint or checkpoint.sourceURL ~= route.sourceURL then
+        return
+    end
+    local selected = uniqueStepIndex(route, checkpoint.stepTitle, checkpoint.completionQuestID)
+    if selected and checkpoint.waypoint then
+        local saved = checkpoint.waypoint
+        for locationIndex, waypoint in ipairs(route.steps[selected].waypoints) do
+            if waypoint.mapID == saved.mapID and waypoint.x == saved.x and waypoint.y == saved.y then
+                return selected, locationIndex
+            end
+        end
+    end
+    if selected then
+        return selected, 1
+    end
+end
+
 function ns.CreateSecretTracker(savedState, onChanged)
     local tracker = {}
     local reveals, revealCount = {}, 0
@@ -140,6 +198,44 @@ function ns.CreateSecretTracker(savedState, onChanged)
         end
     end
     savedState.reveals = reveals
+    local checkpoints, checkpointCount = {}, 0
+    if readable(savedState.checkpoints) and type(savedState.checkpoints) == "table" then
+        for id, raw in pairs(savedState.checkpoints) do
+            if checkpointCount == maxCheckpoints then
+                break
+            end
+            if readable(id) and type(id) == "string" and safeText(id, 404) == id then
+                local checkpoint = normalizeCheckpoint(raw)
+                if checkpoint then
+                    checkpoints[id] = checkpoint
+                    checkpointCount = checkpointCount + 1
+                end
+            end
+        end
+    end
+    savedState.checkpoints = checkpoints
+
+    local function forget(id)
+        if checkpoints[id] then
+            checkpoints[id] = nil
+            checkpointCount = checkpointCount - 1
+        end
+    end
+
+    local function remember(route, index, locationIndex)
+        local checkpoint = checkpointFor(route, index, locationIndex)
+        if not checkpoint then
+            forget(route.id)
+            return
+        end
+        if not checkpoints[route.id] then
+            if checkpointCount == maxCheckpoints then
+                forget(next(checkpoints))
+            end
+            checkpointCount = checkpointCount + 1
+        end
+        checkpoints[route.id] = checkpoint
+    end
     local function select(route, index, locationIndex)
         savedState.route = route
         savedState.index = route and boundedIndex(index, #route.steps) or nil
@@ -208,17 +304,29 @@ function ns.CreateSecretTracker(savedState, onChanged)
         end
     end
 
+    function tracker:GetResumeStep(route)
+        local clean = ns.NormalizeSecretRoute(route)
+        if clean then
+            return matchingCheckpoint(clean, checkpoints[clean.id])
+        end
+    end
+
     function tracker:Track(route)
         local clean = ns.NormalizeSecretRoute(route)
         if not clean then
             return false
         end
         local previous, index, locationIndex = self:GetRoute()
-        if previous and clean.id == previous.id and clean.sourceURL == previous.sourceURL then
-            select(clean, index, locationIndex)
-        else
-            select(clean)
+        local checkpoint = checkpoints[clean.id]
+        if previous then
+            if previous.id == clean.id and previous.sourceURL == clean.sourceURL then
+                checkpoint = checkpointFor(previous, index, locationIndex)
+            else
+                remember(previous, index, locationIndex)
+            end
         end
+        local checkpointIndex, checkpointLocation = matchingCheckpoint(clean, checkpoint)
+        select(clean, checkpointIndex, checkpointLocation)
         onChanged()
         return true
     end
@@ -252,9 +360,22 @@ function ns.CreateSecretTracker(savedState, onChanged)
     end
 
     function tracker:Stop()
-        if not savedState.route then
+        local route, index, locationIndex = self:GetRoute()
+        if not route then
             return false
         end
+        remember(route, index, locationIndex)
+        select(nil)
+        onChanged()
+        return true
+    end
+
+    function tracker:Finish()
+        local route = self:GetRoute()
+        if not route then
+            return false
+        end
+        forget(route.id)
         select(nil)
         onChanged()
         return true

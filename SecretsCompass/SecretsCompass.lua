@@ -1024,7 +1024,7 @@ function SecretsCompassNextStep()
     end
     local route, index = secretTracker:GetRoute()
     if route and index == #route.steps then
-        secretTracker:Stop()
+        secretTracker:Finish()
         secretsUI:ShowFinished()
     else
         secretTracker:Step(1)
@@ -1077,6 +1077,7 @@ local function initSecrets()
             setPreference("enabled", true)
         end,
         getRoutes = standaloneRoutes,
+        getResumeStep = function(route) return secretTracker:GetResumeStep(route) end,
         start = function(id)
             for _, route in ipairs(standaloneRoutes()) do
                 if route.id == id then

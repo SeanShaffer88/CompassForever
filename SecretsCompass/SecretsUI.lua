@@ -131,7 +131,7 @@ local function makePanel(api)
 
     controls.previous = button(panel, "Previous", 85, 18, -365, function() api.step(-1) end)
     controls.next = button(panel, "Next", 85, 108, -365, api.next)
-    controls.stop = button(panel, "Stop", 70, 198, -365, api.stop)
+    controls.stop = button(panel, "Pause", 70, 198, -365, api.stop)
     controls.location = button(panel, "Next Location", 132, 274, -365, api.cycle)
     controls.enableHUD = button(panel, "Show HUD", 108, 298, -265, api.enableHUD)
     controls.revealClue = button(panel, "Clue", 84, 18, -300, function() api.setReveal("clue") end)
@@ -218,7 +218,9 @@ function namespace.CreateSecretsUI(api)
                     row:ClearAllPoints()
                     row:SetPoint("TOPLEFT", 18, position)
                 end
-                row:SetText("Track " .. choice.title)
+                local resumeStep = api.getResumeStep(choice)
+                row:SetText(resumeStep and ("Resume %s (Step %d)"):format(choice.title, resumeStep)
+                    or ("Track " .. choice.title))
                 row:Show()
             end
         end

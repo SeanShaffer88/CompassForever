@@ -986,13 +986,21 @@ faction = "Horde"
 assert(BINDING_HEADER_SECRETSCOMPASS == "SecretsCompass" and BINDING_NAME_SECRETCOMPASS_NEXT_STEP == "Next Secret Step")
 SecretsCompassNextStep()
 assert(secrets.progress:GetText():match("^Step 2") and SecretCompassSecretDB.index == 2)
-local resumed = namespace.CreateSecretTracker(SecretCompassSecretDB, function() end)
+local resumed = namespace.CreateSecretTracker({
+    route = SecretCompassSecretDB.route,
+    index = SecretCompassSecretDB.index,
+    locationIndex = SecretCompassSecretDB.locationIndex,
+}, function() end)
 local _, resumedIndex = resumed:GetRoute()
 assert(resumedIndex == 2, "A new tracker resumes saved step")
 click(secrets.controls.previous)
 assert(SecretCompassSecretDB.index == 1)
+click(secrets.controls.next)
+assert(secrets.controls.stop:GetText() == "Pause")
 click(secrets.controls.stop)
-assert(SecretCompassSecretDB.route == nil and cozyButton:IsVisible())
+assert(SecretCompassSecretDB.route == nil and cozyButton:IsVisible()
+    and cozyButton:GetText():find("Resume", 1, true)
+    and cozyButton:GetText():find("Step 2", 1, true), "Pause exposes the saved step in the picker")
 
 completionFlags[96335] = true
 click(alcazButton)
@@ -1015,7 +1023,12 @@ assert(secrets.note:GetText():find("Rix Xizzix", 1, true))
 click(secrets.controls.next)
 assert(#alcaz.steps[4].waypoints == 0 and not marker:IsVisible(), "Final assembly has no compass target")
 slash("next")
-assert(SecretCompassSecretDB.route == nil and alcazButton:IsVisible())
+assert(SecretCompassSecretDB.route == nil and alcazButton:IsVisible()
+    and alcazButton:GetText():find("Track", 1, true), "Finished routes are offered as a fresh run")
+click(cozyButton)
+assert(SecretCompassSecretDB.index == 2 and SecretCompassSecretDB.route.title == "Cozy Sleeping Bag",
+    "Starting a second secret preserves the first secret's checkpoint")
+click(secrets.controls.stop)
 faction = "Alliance"
 local allianceAlcaz = namespace.StandaloneSecrets()[2]
 assert(allianceAlcaz.steps[3].waypoints[1].mapID == 1453
@@ -1082,6 +1095,12 @@ assert(secrets.controls.location:IsVisible() and not marker:IsVisible(),
 click(secrets.controls.location)
 advance()
 assert(marker:IsVisible() and SecretCompassSecretDB.locationIndex == 2)
+click(secrets.controls.stop)
+foreignLink.currentURL = foreignEntry.guideURL
+click(trackSecret)
+advance()
+assert(marker:IsVisible() and SecretCompassSecretDB.index == 2 and SecretCompassSecretDB.locationIndex == 2,
+    "Reopening a SecretChecklist guide resumes its selected location")
 click(secrets.controls.next)
 advance()
 assert(secrets.stepTitle:GetText() == "Return the note" and not marker:IsVisible())
@@ -1152,5 +1171,55 @@ local _, beforeSuggestion = loadedTracker:GetRoute()
 assert(beforeSuggestion == 1, "Checking progress never advances")
 assert(loadedTracker:Jump(3) and not loadedTracker:Jump(8))
 assert(loadedTracker:Step(-1), "The suggested step can be manually overridden")
+
+local saved = {}
+local tracker = namespace.CreateSecretTracker(saved, function() end)
+local firstLocation = {mapID = 1436, x = 0.30, y = 0.40}
+local secondLocation = {mapID = 1436, x = 0.50, y = 0.60}
+local beginStep = {title = "Begin"}
+local pickStep = {title = "Investigate", completionQuestID = 654, waypoints = {firstLocation, secondLocation}}
+local endStep = {title = "Complete"}
+local route = {id = "fixture:checkpoints", title = "Route A", sourceURL = "https://example.com/route",
+    steps = {beginStep, pickStep, endStep}}
+local another = {id = "fixture:checkpoints-other", title = "Route B", steps = {beginStep, endStep}}
+assert(tracker:Track(route) and tracker:Step(1) and tracker:CycleLocation())
+assert(not tracker:Track({id = "bad"}), "An invalid switch leaves the active route intact")
+local _, keptIndex, keptLocation = tracker:GetRoute()
+assert(keptIndex == 2 and keptLocation == 2)
+assert(tracker:Track(another) and tracker:Step(1) and tracker:Stop())
+local restored = namespace.CreateSecretTracker(saved, function() end)
+local index, location = restored:GetResumeStep(route)
+assert(index == 2 and location == 2, "Switching saves a separate checkpoint across reload")
+local otherIndex = restored:GetResumeStep(another)
+assert(otherIndex == 2, "Pausing another route saves independently")
+assert(restored:Track(route) and restored:GetCurrentStep().title == pickStep.title)
+local _, selected = restored:GetCurrentStep()
+assert(selected.x == secondLocation.x, "Repeat selection restores the waypoint")
+local moved = {id = route.id, title = route.title, sourceURL = route.sourceURL,
+    steps = {beginStep, endStep,
+        {title = pickStep.title, completionQuestID = 654, waypoints = {secondLocation, firstLocation}}}}
+assert(restored:Track(moved), "A guide can refresh while active")
+local _, newIndex, newLocation = restored:GetRoute()
+assert(newIndex == 3 and newLocation == 1, "Active guide reorders preserve the uniquely matching step and point")
+assert(restored:Stop() and restored:Track(route))
+local _, originalIndex, originalLocation = restored:GetRoute()
+assert(originalIndex == 2 and originalLocation == 2, "Paused guide reorders preserve the same step and location")
+assert(restored:Stop())
+local changed = {id = route.id, title = route.title, sourceURL = "https://example.com/updated", steps = route.steps}
+assert(restored:GetResumeStep(changed) == nil, "A changed guide source cannot claim an old checkpoint")
+local duplicate = {id = route.id, title = route.title, sourceURL = route.sourceURL, steps = {pickStep, pickStep}}
+assert(restored:GetResumeStep(duplicate) == nil, "Duplicate step titles and quest identities are ambiguous")
+assert(restored:Track(moved) and restored:Finish() and restored:GetResumeStep(moved) == nil)
+assert(restored:Track(moved))
+local _, replayIndex = restored:GetRoute()
+assert(replayIndex == 1 and restored:GetResumeStep(another) == 2, "Finish resets only the completed route")
+
+local invalidState = {checkpoints = {
+    [route.id] = {sourceURL = route.sourceURL, stepTitle = false},
+    [another.id] = {sourceURL = false, stepTitle = "Complete"},
+}}
+local sanitized = namespace.CreateSecretTracker(invalidState, function() end)
+assert(sanitized:GetResumeStep(route) == nil and sanitized:GetResumeStep(another) == nil
+    and next(invalidState.checkpoints) == nil, "Malformed saved checkpoints are filtered")
 
 print("SecretsCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, spoiler levels, verified progress, and the SecretChecklist companion")
