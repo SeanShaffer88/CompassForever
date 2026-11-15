@@ -2021,9 +2021,33 @@ do
         "When native map APIs are unavailable, Copy Waypoint is still available")
 
     local baseMapPermission, baseSetWaypoint, baseMapPoint = C_Map.CanSetUserWaypointOnMap, C_Map.SetUserWaypoint, UiMapPoint
+    local baseGetWaypoint, baseClearWaypoint = C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint
     local previousPlayerPin = waypoint
     local allowed, setterResult, setterThrows = true, true, false
-    local permissionCalls, pointCalls, setterCalls = 0, 0, 0
+    local setterEvents, clearMode, unreadablePosition = 1, "clear", nil
+    local permissionCalls, pointCalls, setterCalls, getterCalls, clearCalls = 0, 0, 0, 0, 0
+    local function waypointUpdated()
+        local opened = SecretsCompassSecrets
+        assert(opened.events.USER_WAYPOINT_UPDATED)
+        opened.scripts.OnEvent(opened, "USER_WAYPOINT_UPDATED")
+    end
+    C_Map.GetUserWaypoint = function()
+        getterCalls = getterCalls + 1
+        if unreadablePosition then
+            return { uiMapID = waypoint.uiMapID, position = unreadablePosition }
+        end
+        return waypoint
+    end
+    C_Map.ClearUserWaypoint = function()
+        clearCalls = clearCalls + 1
+        if clearMode == "throw" then
+            error("Mock clear failure")
+        end
+        if clearMode == "clear" then
+            waypoint = nil
+            waypointUpdated()
+        end
+    end
     C_Map.CanSetUserWaypointOnMap = function(mapID)
         permissionCalls = permissionCalls + 1
         assert(mapID == 1432 or mapID == 4)
@@ -2040,6 +2064,9 @@ do
         end
         if setterResult == true then
             waypoint = point
+            for _ = 1, setterEvents do
+                waypointUpdated()
+            end
         end
         return setterResult
     end
@@ -2080,14 +2107,73 @@ do
     assertResumeDetails(journal, condor.title, condorSummary)
     assertResumeTooltip(journal, condorSummary)
     local copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
-    assert(permissionCalls == 0 and pointCalls == 0 and setterCalls == 0 and waypoint == previousPlayerPin,
+    assert(permissionCalls == 0 and pointCalls == 0 and setterCalls == 0 and getterCalls == 0
+        and not journal.controls.clearWaypoint:IsVisible() and waypoint == previousPlayerPin,
         "Opening, filtering and copying do not touch the player map pin")
+
     assertSetWaypoint(journal, 1432, 0.777, 0.749)
-    local savedPin = waypoint
+    local clear = journal.controls.clearWaypoint
+    assert(clear:IsVisible() and journal.controls.continueLast:GetText() == "Continue"
+        and getterCalls == 1, "One synchronous update and a matching read enable Clear")
+    assertResumeDetails(journal, condor.title, condorSummary)
+    local _, setX = journal.controls.setWaypoint:GetPoint()
+    local _, clearX = clear:GetPoint()
+    assert(setX + journal.controls.setWaypoint:GetWidth() < clearX, "The fourth action fits beside Set")
+
+    clearMode = "noop"
+    click(clear)
+    assert(clearCalls == 1 and clear:IsVisible()
+        and journal.stepTitle:GetText() == "Could not clear the World Map waypoint.",
+        "A silent failed clear does not claim success and can retry a verified unchanged pin")
+    clearMode = "clear"
+    local pausedBookmark, pausedNavigation = saved.lastPaused, saved.navigation
+    click(clear)
+    assert(clearCalls == 2 and waypoint == nil and not clear:IsVisible()
+        and journal.stepTitle:GetText() == "Waypoint cleared from the World Map."
+        and saved.route == nil and saved.lastPaused == pausedBookmark and saved.navigation == pausedNavigation,
+        "An explicit clear verifies the map pin is absent and leaves the secret paused")
+
+    assertSetWaypoint(journal, 1432, 0.777, 0.749)
+    waypoint = { uiMapID = 1432, position = CreateVector2D(0.777, 0.749) }
+    waypointUpdated()
+    click(clear)
+    assert(not clear:IsVisible() and clearCalls == 2 and waypoint,
+        "An external update revokes even an identical replacement")
+
+    assertSetWaypoint(journal, 1432, 0.777, 0.749)
+    waypoint = { uiMapID = 1432, position = CreateVector2D(0.778, 0.749) }
+    local foreignPin = waypoint
+    click(clear)
+    assert(not clear:IsVisible() and clearCalls == 2 and waypoint == foreignPin
+        and journal.stepTitle:GetText() == "The journal waypoint could not be verified.",
+        "An unannounced coordinate change is detected before any clear call")
+
+    for _, events in ipairs({ 0, 2 }) do
+        setterEvents = events
+        local beforeReads = getterCalls
+        assertSetWaypoint(journal, 1432, 0.777, 0.749)
+        assert(not clear:IsVisible() and getterCalls == beforeReads,
+            "Zero or multiple waypoint updates leave the new ownership unverified")
+    end
+    setterEvents = 1
+    unreadablePosition = secret
+    assertSetWaypoint(journal, 1432, 0.777, 0.749)
+    assert(not clear:IsVisible(), "An unreadable observed position cannot establish ownership")
+    unreadablePosition = nil
+
+    assertSetWaypoint(journal, 1432, 0.777, 0.749)
+    clearMode = "throw"
+    click(clear)
+    assert(clearCalls == 3 and not clear:IsVisible() and waypoint
+        and journal.stepTitle:GetText() == "Could not clear the World Map waypoint.",
+        "An error is contained and revokes uncertain ownership")
+    clearMode = "clear"
+
+    local savedPin, beforeCreate, beforeSet = waypoint, pointCalls, setterCalls
     allowed = false
     click(journal.controls.setWaypoint)
     assert(journal.stepTitle:GetText() == "This map does not support World Map waypoints."
-        and pointCalls == 1 and setterCalls == 1 and waypoint == savedPin,
+        and pointCalls == beforeCreate and setterCalls == beforeSet and waypoint == savedPin,
         "Unsupported maps do not construct or place a waypoint")
     allowed = true
     for _, rejected in ipairs({ false, secret }) do
@@ -2147,8 +2233,8 @@ do
         click(journal.controls.stop)
         assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
         assertResumeTooltip(journal)
-        assert(not journal.controls.copyWaypoint:IsVisible() and not journal.controls.setWaypoint:IsVisible(),
-            "Low reveal levels hide both waypoint actions")
+        assert(not journal.controls.copyWaypoint:IsVisible() and not journal.controls.setWaypoint:IsVisible()
+            and not journal.controls.clearWaypoint:IsVisible(), "Low reveal levels hide all waypoint actions")
         click(journal.controls.continueLast)
     end
 
@@ -2188,8 +2274,12 @@ do
     assertResumeTooltip(journal)
     copyInput = assertCopyWaypoint(journal, "/mappin 4 10.00 20.00")
     assertSetWaypoint(journal, 4, 0.10, 0.20)
+    assert(journal.controls.clearWaypoint:IsVisible(), "Imported waypoints can be owned even when the map name is unknown")
+    local readsBeforeReload, importedPin = getterCalls, waypoint
     C_Map.GetMapInfo = getMapInfo
     journal = reloadJournal(saved)
+    assert(not journal.controls.clearWaypoint:IsVisible() and getterCalls == readsBeforeReload and waypoint == importedPin,
+        "A reload does not claim or read the existing map pin")
     assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2 · Test Map 4 (10.0, 20.0)")
     click(journal.controls.continueLast)
     assertResumeDetails(journal)
@@ -2204,6 +2294,7 @@ do
         "Finishing the continued route clears the saved shortcut")
     assertResumeDetails(journal)
     C_Map.CanSetUserWaypointOnMap, C_Map.SetUserWaypoint, UiMapPoint = baseMapPermission, baseSetWaypoint, baseMapPoint
+    C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint = baseGetWaypoint, baseClearWaypoint
     waypoint = previousPlayerPin
 end
 
