@@ -153,6 +153,23 @@ local function mapCommandText(waypoint)
         math.floor(x / 100), x % 100, math.floor(y / 100), y % 100)
 end
 
+local function savedMapCommand(route, index, location, reveal)
+    local step = route and route.steps[index]
+    local waypoint = step and step.waypoints[location]
+    if canShowMapCommand(waypoint, reveal) then
+        return {
+            id = route.id, sourceURL = route.sourceURL, index = index, location = location,
+            reveal = reveal, command = mapCommandText(waypoint),
+        }
+    end
+end
+
+local function sameSavedMapCommand(previous, current)
+    return current and previous.id == current.id and previous.sourceURL == current.sourceURL
+        and previous.index == current.index and previous.location == current.location
+        and previous.reveal == current.reveal and previous.command == current.command
+end
+
 local function routeCategory(route)
     return routeCategories[route.category] or otherCategory
 end
@@ -389,7 +406,8 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
         self:SetText("")
         self:ClearFocus()
     end)
-    controls.continueLast = button(body, "Continue Last Secret", 150, 256, -74, api.continueLast)
+    controls.continueLast, controls.continueLastCaption =
+        button(body, "Continue Last Secret", 150, 256, -74, api.continueLast)
     local function hideContinueTooltip(self)
         if GameTooltip and GameTooltip:IsOwned(self) then
             GameTooltip:Hide()
@@ -485,22 +503,46 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
     jumpInput:SetScript("OnEscapePressed", panel.resetJump)
 
     local mapInput = CreateFrame("EditBox", nil, body, "InputBoxTemplate")
-    mapInput:SetSize(172, 24)
-    mapInput:SetPoint("BOTTOMLEFT", 150, 54)
+    mapInput:SetHeight(24)
     mapInput:SetAutoFocus(false)
     controls.mapCommandInput = mapInput
     local copyHint = label(body, "GameFontHighlightSmall", 327, 0, 80, 15)
-    copyHint:ClearAllPoints()
-    copyHint:SetPoint("BOTTOMLEFT", 327, 57)
     copyHint:SetText("Ctrl+C to copy")
 
     local selectedCommand
     panel.resetMapCommand = function()
+        if panel.selectedSavedMapCommand then
+            panel.stepTitle:Show()
+        end
+        panel.selectedSavedMapCommand = nil
         selectedCommand = nil
         mapInput:ClearFocus()
         mapInput:SetText("")
         mapInput:Hide()
         copyHint:Hide()
+    end
+    local function showMapCommand(command, savedCommand)
+        jumpInput:ClearFocus()
+        search:ClearFocus()
+        mapInput:ClearAllPoints()
+        copyHint:ClearAllPoints()
+        if savedCommand then
+            mapInput:SetWidth(272)
+            mapInput:SetPoint("TOPLEFT", 24, -115)
+            copyHint:SetPoint("TOPLEFT", 306, -120)
+        else
+            mapInput:SetWidth(172)
+            mapInput:SetPoint("BOTTOMLEFT", 150, 54)
+            copyHint:SetPoint("BOTTOMLEFT", 327, 57)
+        end
+        panel.selectedSavedMapCommand = savedCommand
+        panel.stepTitle:SetShown(savedCommand == nil)
+        selectedCommand = command
+        mapInput:SetText(command)
+        mapInput:Show()
+        copyHint:Show()
+        mapInput:SetFocus()
+        mapInput:HighlightText()
     end
     mapInput:SetScript("OnTextChanged", function(self)
         if selectedCommand and self:GetText() ~= selectedCommand then
@@ -513,17 +555,20 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
     controls.mapCommand = button(body, "Map Command", 120, 18, 0, function()
         local _, waypoint = api.getCurrentStep()
         if panel:IsShown() and canShowMapCommand(waypoint, api.getReveal()) then
-            jumpInput:ClearFocus()
-            selectedCommand = mapCommandText(waypoint)
-            mapInput:SetText(selectedCommand)
-            mapInput:Show()
-            copyHint:Show()
-            mapInput:SetFocus()
-            mapInput:HighlightText()
+            showMapCommand(mapCommandText(waypoint))
         end
     end)
     controls.mapCommand:ClearAllPoints()
     controls.mapCommand:SetPoint("BOTTOMLEFT", 18, 54)
+    controls.copyWaypoint = button(body, "Copy Waypoint", 98, 308, -74, function(self)
+        local savedCommand = savedMapCommand(api.getLastPausedRoute())
+        if panel:IsShown() and self:IsShown() and savedCommand then
+            menu:Hide()
+            showMapCommand(savedCommand.command, savedCommand)
+        elseif panel.selectedSavedMapCommand then
+            panel.resetMapCommand()
+        end
+    end)
 
     controls.navigation = button(body, "", 176, 230, -12, api.switchNavigation)
     panel.navigationStatus = label(body, "GameFontHighlightSmall", 77, -9, 145, 42)
@@ -629,6 +674,8 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
             pausedRoute, pausedIndex, pausedLocation, pausedReveal = api.getLastPausedRoute()
         end
         local canContinue = pausedRoute ~= nil
+        local savedCommand = savedMapCommand(pausedRoute, pausedIndex, pausedLocation, pausedReveal)
+        local canCopyWaypoint = savedCommand ~= nil
         local pausedStepText, waypointTooltip = "", nil
         if canContinue then
             pausedStepText = ("Step %d of %d"):format(pausedIndex, #pausedRoute.steps)
@@ -649,15 +696,27 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
             end
         end
         controls.continueLast.waypointTooltip = waypointTooltip
+        controls.continueLast:ClearAllPoints()
+        controls.continueLast:SetPoint("TOPLEFT", canCopyWaypoint and 170 or 256, -74)
+        local continueWidth = canCopyWaypoint and 132 or 150
+        controls.continueLast:SetWidth(continueWidth)
+        controls.continueLastCaption:SetWidth(continueWidth - 4)
         controls.continueLast:SetShown(canContinue)
+        controls.copyWaypoint:SetShown(canCopyWaypoint)
+        controls.pausedRouteTitle:SetWidth(canCopyWaypoint and 144 or 228)
         controls.pausedRouteTitle:SetText(canContinue and pausedRoute.title or "")
         controls.pausedRouteTitle:SetShown(canContinue)
         controls.pausedStep:SetText(pausedStepText)
         controls.pausedStep:SetShown(canContinue)
-        panel.routeTitle:SetHeight(canContinue and 18 or 34)
+        panel.routeTitle:SetSize(canCopyWaypoint and 170 or 390, canContinue and 18 or 34)
         panel.progress:ClearAllPoints()
-        panel.progress:SetPoint("TOPLEFT", 18, canContinue and -70 or -88)
-        panel.progress:SetSize(canContinue and 228 or 390, canContinue and 14 or 18)
+        if canCopyWaypoint then
+            panel.progress:SetPoint("TOPLEFT", 193, -53)
+            panel.progress:SetSize(213, 14)
+        else
+            panel.progress:SetPoint("TOPLEFT", 18, canContinue and -70 or -88)
+            panel.progress:SetSize(canContinue and 228 or 390, canContinue and 14 or 18)
+        end
         controls.routeSearch:SetShown(not tracking)
         controls.routeCategory:SetShown(not tracking)
         controls.routeExpandAll:SetShown(not tracking)
@@ -779,7 +838,11 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
             controls.jumpLabel:SetText(("Go to Step (1–%d)"):format(#route.steps))
         end
         local showMapCommand = tracking and canShowMapCommand(waypoint, reveal)
-        if not showMapCommand or panel.mapCommandRoute ~= route or panel.mapCommandIndex ~= index
+        if panel.selectedSavedMapCommand then
+            if not sameSavedMapCommand(panel.selectedSavedMapCommand, savedCommand) then
+                panel.resetMapCommand()
+            end
+        elseif not showMapCommand or panel.mapCommandRoute ~= route or panel.mapCommandIndex ~= index
             or panel.mapCommandWaypoint ~= waypoint or panel.mapCommandReveal ~= reveal then
             panel.resetMapCommand()
         end

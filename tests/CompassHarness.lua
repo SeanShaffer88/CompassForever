@@ -1921,26 +1921,49 @@ do
         assert(controls.pausedRouteTitle:IsVisible() == visible and controls.pausedStep:IsVisible() == visible
             and controls.pausedRouteTitle:GetText() == (title or "") and controls.pausedStep:GetText() == (step or ""),
             "Resume details show only the paused route title and step ordinal")
-        local _, _, titleY = journal.routeTitle:GetPoint()
+        local _, titleX, titleY = journal.routeTitle:GetPoint()
         local _, progressX, progressY = journal.progress:GetPoint()
         local _, nameX, nameY = controls.pausedRouteTitle:GetPoint()
         local _, _, stepY = controls.pausedStep:GetPoint()
         local _, _, hintY = journal.stepTitle:GetPoint()
         local _, buttonX, buttonY = controls.continueLast:GetPoint()
         if visible then
-            assert(titleY - journal.routeTitle:GetHeight() >= progressY
-                and progressY - journal.progress:GetHeight() >= nameY
-                and nameY - controls.pausedRouteTitle:GetHeight() >= stepY
+            assert(nameY - controls.pausedRouteTitle:GetHeight() >= stepY
                 and stepY - controls.pausedStep:GetHeight() >= hintY
                 and nameX + controls.pausedRouteTitle:GetWidth() < buttonX
-                and progressX + journal.progress:GetWidth() < buttonX
                 and buttonY - controls.continueLast:GetHeight() >= stepY,
-                "Resume details clear the chooser, count, shortcut and companion hint")
+                "Resume details clear the shortcuts and companion hint")
+            if controls.copyWaypoint:IsVisible() then
+                local _, copyX = controls.copyWaypoint:GetPoint()
+                assert(titleX + journal.routeTitle:GetWidth() < progressX
+                    and progressY - journal.progress:GetHeight() >= buttonY
+                    and buttonX + controls.continueLast:GetWidth() < copyX,
+                    "Copy and Continue fit beside the route name with a separate progress line")
+            else
+                assert(titleY - journal.routeTitle:GetHeight() >= progressY
+                    and progressY - journal.progress:GetHeight() >= nameY
+                    and progressX + journal.progress:GetWidth() < buttonX,
+                    "The route and progress fit above the Continue-only summary")
+            end
         else
             assert(journal.routeTitle:GetHeight() == 34 and progressY == -88
                 and journal.progress:GetWidth() == 390 and journal.progress:GetHeight() == 18,
                 "The standard title and progress geometry returns when resume details hide")
         end
+    end
+
+    local function assertCopyWaypoint(journal, command)
+        local copy = journal.controls.copyWaypoint
+        assert(copy:IsVisible(), "The paused waypoint can be copied")
+        click(copy)
+        local input = journal.controls.mapCommandInput
+        local anchor, _, inputY = input:GetPoint()
+        local _, _, searchY = journal.controls.routeSearch:GetPoint()
+        assert(input:IsVisible() and input.focused and input.highlighted and input:GetText() == command
+            and anchor == "TOPLEFT" and inputY - input:GetHeight() >= searchY
+            and not journal.stepTitle:IsVisible() and SecretCompassSecretDB.route == nil,
+            "Copy opens a selected command before search while leaving the route paused")
+        return input
     end
 
     local function assertResumeTooltip(journal, expected)
@@ -2002,18 +2025,44 @@ do
     local condorSummary = "Step 1 of 1 · Location 2 of 3 · Test Map 1432 (77.7, 74.9)"
     assertResumeDetails(journal, condor.title, condorSummary)
     assertResumeTooltip(journal, condorSummary)
+    local copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    journal.controls.routeSearch:SetText("nothing matches")
+    assert(copyInput:IsVisible() and copyInput:GetText() == "/mappin 1432 77.70 74.90",
+        "Refreshing the same built-in waypoint keeps its copy field")
+    copyInput.scripts.OnEscapePressed(copyInput)
+    assert(not copyInput:IsVisible() and not copyInput.focused and copyInput:GetText() == ""
+        and journal.stepTitle:IsVisible(), "Escape closes Copy Waypoint and restores the journal hint")
+    copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    saved.reveals[condor.id] = "distance"
+    journal.controls.routeSearch:SetText("")
+    assert(not copyInput:IsVisible() and not copyInput.focused and copyInput:GetText() == ""
+        and not journal.controls.copyWaypoint:IsVisible() and journal.stepTitle:IsVisible(),
+        "A reveal change clears the stale command and copy control")
+    saved.reveals[condor.id] = "coordinates"
+    journal.controls.routeSearch:SetText("no matching secret")
+    copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    journal.scripts.OnHide(journal)
+    assert(not copyInput:IsVisible() and not copyInput.focused and copyInput:GetText() == "",
+        "Closing the journal clears the paused command")
+    copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
     click(shortcut)
+    assert(not copyInput:IsVisible() and not copyInput.focused and copyInput:GetText() == ""
+        and not journal.controls.copyWaypoint:IsVisible() and journal.stepTitle:IsVisible(),
+        "Continuing clears the paused copy field and restores the active instructions")
     assertResumeDetails(journal)
     assert(saved.route.id == condor.id and saved.index == 1 and saved.locationIndex == 2
         and journal.progress:GetText():find("Location 2 of 3", 1, true) and not shortcut:IsVisible(),
         "Continuing a built-in route restores its exact step and alternate location")
     click(journal.controls.mapCommand)
-    assert(journal.controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90")
+    assert(journal.controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90"
+        and journal.controls.mapCommandInput:GetPoint() == "BOTTOMLEFT",
+        "The active map command uses its original footer")
     for _, reveal in ipairs({ "distance", "clue" }) do
         assert(runtimeTracker:SetReveal(reveal))
         click(journal.controls.stop)
         assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
         assertResumeTooltip(journal)
+        assert(not journal.controls.copyWaypoint:IsVisible(), "Low reveal levels hide Copy Waypoint")
         click(journal.controls.continueLast)
     end
 
@@ -2029,8 +2078,13 @@ do
         },
     }
     assert(runtimeTracker:Track(imported))
+    runtimeTracker:SetReveal("coordinates")
     click(journal.controls.stop)
     assertResumeDetails(journal, imported.title, "Step 1 of 2")
+    copyInput = assertCopyWaypoint(journal, "/mappin 1 25.00 30.00")
+    copyInput.scripts.OnEnterPressed(copyInput)
+    assert(not copyInput:IsVisible() and not copyInput.focused and journal.stepTitle:IsVisible(),
+        "Enter closes the selectable command for a single mapped waypoint")
     click(journal.controls.continueLast)
     assert(runtimeTracker:Jump(2) and runtimeTracker:CycleLocation())
     runtimeTracker:SetReveal("full")
@@ -2046,6 +2100,8 @@ do
     journal = reloadJournal(saved)
     assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2")
     assertResumeTooltip(journal)
+    copyInput = assertCopyWaypoint(journal, "/mappin 4 10.00 20.00")
+    copyInput.scripts.OnEscapePressed(copyInput)
     C_Map.GetMapInfo = getMapInfo
     journal = reloadJournal(saved)
     assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2 · Test Map 4 (10.0, 20.0)")
