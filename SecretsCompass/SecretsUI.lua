@@ -383,6 +383,16 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
         self:ClearFocus()
     end)
     controls.continueLast = button(body, "Continue Last Secret", 150, 256, -85, api.continueLast)
+    controls.pausedRouteTitle = label(body, "GameFontNormalSmall", 18, -85, 228, 14)
+    controls.pausedRouteTitle:SetTextColor(unpack(gold))
+    if controls.pausedRouteTitle.SetWordWrap then
+        controls.pausedRouteTitle:SetWordWrap(false)
+    end
+    if controls.pausedRouteTitle.SetMaxLines then
+        controls.pausedRouteTitle:SetMaxLines(1)
+    end
+    controls.pausedStep = label(body, "GameFontHighlightSmall", 18, -99, 228, 12)
+    controls.pausedStep:SetTextColor(unpack(muted))
     controls.routeExpandAll = button(body, "Expand All", 98, 18, -177, function() setAllCategories(nil) end)
     controls.routeCollapseAll = button(body, "Collapse All", 104, 124, -177, function() setAllCategories(true) end)
     controls.routeStatus = button(body, "", 154, 252, -177, cycleStatus)
@@ -587,9 +597,20 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
         for _, heading in pairs(controls.routeHeadings) do
             heading:Hide()
         end
-        local canContinue = not tracking and api.getLastPausedRoute() ~= nil
+        local pausedRoute, pausedIndex
+        if not tracking then
+            pausedRoute, pausedIndex = api.getLastPausedRoute()
+        end
+        local canContinue = pausedRoute ~= nil
         controls.continueLast:SetShown(canContinue)
-        panel.progress:SetWidth(canContinue and 228 or 390)
+        controls.pausedRouteTitle:SetText(canContinue and pausedRoute.title or "")
+        controls.pausedRouteTitle:SetShown(canContinue)
+        controls.pausedStep:SetText(canContinue and ("Step %d of %d"):format(pausedIndex, #pausedRoute.steps) or "")
+        controls.pausedStep:SetShown(canContinue)
+        panel.routeTitle:SetHeight(canContinue and 18 or 34)
+        panel.progress:ClearAllPoints()
+        panel.progress:SetPoint("TOPLEFT", 18, canContinue and -70 or -88)
+        panel.progress:SetHeight(canContinue and 14 or 18)
         controls.routeSearch:SetShown(not tracking)
         controls.routeCategory:SetShown(not tracking)
         controls.routeExpandAll:SetShown(not tracking)

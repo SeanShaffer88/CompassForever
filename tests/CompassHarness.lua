@@ -1871,6 +1871,32 @@ do
         return SecretsCompassSecrets
     end
 
+    local function assertResumeDetails(journal, title, step)
+        local controls = journal.controls
+        local visible = title ~= nil
+        assert(controls.pausedRouteTitle:IsVisible() == visible and controls.pausedStep:IsVisible() == visible
+            and controls.pausedRouteTitle:GetText() == (title or "") and controls.pausedStep:GetText() == (step or ""),
+            "Resume details show only the paused route title and step ordinal")
+        local _, _, titleY = journal.routeTitle:GetPoint()
+        local _, _, progressY = journal.progress:GetPoint()
+        local _, nameX, nameY = controls.pausedRouteTitle:GetPoint()
+        local _, _, stepY = controls.pausedStep:GetPoint()
+        local _, _, hintY = journal.stepTitle:GetPoint()
+        local _, buttonX = controls.continueLast:GetPoint()
+        if visible then
+            assert(titleY - journal.routeTitle:GetHeight() >= progressY
+                and progressY - journal.progress:GetHeight() >= nameY
+                and nameY - controls.pausedRouteTitle:GetHeight() >= stepY
+                and stepY - controls.pausedStep:GetHeight() >= hintY
+                and nameX + controls.pausedRouteTitle:GetWidth() < buttonX,
+                "Resume details clear the chooser, count, shortcut and companion hint")
+        else
+            assert(journal.routeTitle:GetHeight() == 34 and progressY == -88
+                and journal.progress:GetWidth() == 390 and journal.progress:GetHeight() == 18,
+                "The standard title and progress geometry returns when resume details hide")
+        end
+    end
+
     local condor
     for _, choice in ipairs(namespace.StandaloneSecrets()) do
         if choice.id == "condor-hatchling" then
@@ -1884,15 +1910,22 @@ do
     }
     local journal = reloadJournal(saved)
     assert(not journal.controls.continueLast:IsVisible(), "The shortcut is hidden during active tracking")
+    assertResumeDetails(journal)
     click(journal.controls.stop)
     local bookmark = assert(saved.lastPaused)
     assert(journal.controls.continueLast:IsVisible(), "Pausing creates the Continue Last Secret shortcut")
+    assertResumeDetails(journal, condor.title, "Step 1 of 1")
 
     saved.lastPaused = nil
     journal = reloadJournal(saved)
     assert(not journal.controls.continueLast:IsVisible()
         and journal.controls.routes[condor.id].action:GetText() == "Resume · Step 1",
         "A legacy checkpoint remains resumable without inventing a most recently paused route")
+    assertResumeDetails(journal)
+    saved.lastPaused = { id = "missing-route" }
+    journal = reloadJournal(saved)
+    assert(not journal.controls.continueLast:IsVisible(), "An unresolved bookmark hides the shortcut")
+    assertResumeDetails(journal)
 
     saved.lastPaused = bookmark
     journal = reloadJournal(saved)
@@ -1900,7 +1933,9 @@ do
     local shortcut = journal.controls.continueLast
     assert(shortcut:IsVisible() and shortcut:GetText() == "Continue Last Secret"
         and journal.controls.routeEmpty:IsVisible(), "The restored shortcut is independent of browse filters")
+    assertResumeDetails(journal, condor.title, "Step 1 of 1")
     click(shortcut)
+    assertResumeDetails(journal)
     assert(saved.route.id == condor.id and saved.index == 1 and saved.locationIndex == 2
         and journal.progress:GetText():find("Location 2 of 3", 1, true) and not shortcut:IsVisible(),
         "Continuing a built-in route restores its exact step and alternate location")
@@ -1921,9 +1956,12 @@ do
     assert(runtimeTracker:Track(imported) and runtimeTracker:Jump(2) and runtimeTracker:CycleLocation())
     runtimeTracker:SetReveal("coordinates")
     click(journal.controls.stop)
+    assertResumeDetails(journal, imported.title, "Step 2 of 2")
     SecretChecklist = nil
     journal = reloadJournal(saved)
+    assertResumeDetails(journal, imported.title, "Step 2 of 2")
     click(journal.controls.continueLast)
+    assertResumeDetails(journal)
     assert(saved.route.id == imported.id and saved.route.title == condor.title and saved.index == 2
         and saved.locationIndex == 2 and journal.progress:GetText():find("Location 2 of 2", 1, true),
         "The most recent imported route survives reload without SecretChecklist and is matched by identity")
@@ -1933,6 +1971,7 @@ do
     click(journal.controls.next)
     assert(saved.route == nil and saved.lastPaused == nil and not journal.controls.continueLast:IsVisible(),
         "Finishing the continued route clears the saved shortcut")
+    assertResumeDetails(journal)
 end
 
 print("SecretsCompass mocks passed: secret-only tracking, HUD controls, categorized standalone secrets, spoiler levels, verified progress, the SecretChecklist companion, and external waypoint navigation")
