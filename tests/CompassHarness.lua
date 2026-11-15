@@ -976,6 +976,9 @@ do
         },
         ["travelers-symbols"] = { {1427, 352, 842} },
         ["bloody-map"] = { {1417, 745.4, 356.4}, {1437, 531.7, 656.7}, {1437, 515.3, 593.5}, {1437, 478, 563} },
+        ["savory-whimsyfin-delight"] = { {1433, 272, 668}, {1433, 608, 699}, {1433, 619, 706}, {1433, 744, 624} },
+        ["malignant-root"] = { {1437, 190, 520}, {1437, 180, 230}, {1437, 290, 170}, {1437, 562, 405} },
+        ["dwarven-tradeskill-signpost"] = { {1433, 106, 713}, {1433, 102, 712}, {1455, 524, 425} },
         ["manual-scavenger-hunt"] = {
             {1417, 226.9, 241.7}, {1424, 876.1, 479.1}, {1458, 228.6, 361.9},
             {2548, 265.6, 455.8}, {2548, 267.2, 477.4}, {1419, 451.9, 164.7},
@@ -988,16 +991,21 @@ do
         slash("secrets")
         local choices = namespace.StandaloneSecrets()
         local isAlliance = side == "Alliance"
-        local expectedCount = isAlliance and 12 or 13
+        local expectedCount = isAlliance and 15 or 14
         assert(#choices == expectedCount
             and secrets.progress:GetText() == ("0 of %d Built-In Routes Finished"):format(expectedCount),
             "Faction-specific additions update the journal count")
         assert(choices[11].id == "blessing-of-kalimdor" and choices[12].id == "travelers-symbols",
-            "Both factions receive the new shared routes")
+            "Both factions keep their existing Barrens and Blackrock routes")
         local symbols = choices[12]
         assert(#symbols.steps == 3 and #symbols.steps[1].waypoints == 1
             and #symbols.steps[2].waypoints == 0 and #symbols.steps[3].waypoints == 0,
             "Traveler's Symbols has an outdoor approach and written directions inside the dungeon")
+        local whimsyfin = choices[isAlliance and 13 or 14]
+        assert(whimsyfin.id == "savory-whimsyfin-delight" and #whimsyfin.steps == 3
+            and #whimsyfin.steps[1].waypoints == 1 and #whimsyfin.steps[2].waypoints == 3
+            and #whimsyfin.steps[3].waypoints == 0,
+            "Both factions get the recipe, fishing alternatives, and a text-only cooking step")
         for index = 11, #choices do
             for _, step in ipairs(choices[index].steps) do
                 assert(not step.completionQuestID, "New routes advance manually")
@@ -1009,6 +1017,12 @@ do
                 and not secrets.controls.routes["whispering-horror-residue"]:IsVisible()
                 and not secrets.controls.routes["bloody-map"]:IsVisible(),
                 "Alliance receives Silver of the Waves and Applejack Still")
+            local root = choices[14]
+            local signpost = choices[15]
+            assert(root.id == "malignant-root" and #root.steps == 2 and #root.steps[1].waypoints == 3
+                and #root.steps[2].waypoints == 1
+                and signpost.id == "dwarven-tradeskill-signpost" and #signpost.steps == 3,
+                "Alliance receives the night patrol and signpost routes")
         else
             assert(choices[9].id == "excitable-slime" and choices[10].id == "whispering-horror-residue",
                 "Horde receives Excitable Slime and Whispering Horror Residue")
@@ -1021,7 +1035,7 @@ do
         end
         local lastRow = secrets.controls.routes[choices[expectedCount].id]
         local _, _, rowY = lastRow:GetPoint()
-        assert(secrets:GetHeight() == (isAlliance and 591 or 621)
+        assert(secrets:GetHeight() == (isAlliance and 681 or 651)
             and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
             "The last route row fits above navigation")
         for i = 3, #choices do
@@ -1124,9 +1138,29 @@ do
     slash("secrets")
     slash("secrets")
     local applejack = secrets.controls.routes["applejack-still"]
-    assert(not applejack:IsVisible() and not silver:IsVisible(), "Alliance rows are hidden on Horde")
+    local root = secrets.controls.routes["malignant-root"]
+    local signpost = secrets.controls.routes["dwarven-tradeskill-signpost"]
+    assert(not applejack:IsVisible() and not silver:IsVisible()
+        and not root:IsVisible() and not signpost:IsVisible(), "Alliance rows are hidden on Horde")
     click(applejack)
+    click(root)
+    click(signpost)
     assert(not SecretCompassSecretDB.route, "A stale Alliance route row cannot start on Horde")
+
+    click(secrets.controls.routes["savory-whimsyfin-delight"])
+    assert(secrets.routeTitle:GetText() == "Savory Whimsyfin Delight" and not secrets.controls.mapCommand:IsVisible(),
+        "Horde can open the recipe route with clues only")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.next)
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1433 61.90 70.60",
+        "Next Location selects an alternate Whimsyfin fishing area")
+    click(secrets.controls.next)
+    assert(secrets.progress:GetText() == "Step 3 of 3"
+        and not secrets.controls.location:IsVisible() and not secrets.controls.mapCommand:IsVisible(),
+        "The cooking step clears waypoint controls")
+    click(secrets.controls.stop)
 
     click(slime)
     assert(secrets.routeTitle:GetText() == "Excitable Slime" and not secrets.controls.mapCommand:IsVisible(),

@@ -1041,6 +1041,92 @@ local function bloodyMapRoute()
     })
 end
 
+local function savoryWhimsyfinDelightRoute()
+    return ns.NormalizeSecretRoute({
+        id = "savory-whimsyfin-delight",
+        title = "Savory Whimsyfin Delight",
+        sourceURL = "https://wowhandbook.com/news/savory-whimsyfin-delight-recipe/",
+        steps = {
+            routeStep("Find the recipe in Redridge",
+                "Both factions. The tradable recipe is a rare drop from Redridge Mountains enemies. "
+                    .. "Search for Great Goretusks in the foothills or buy the recipe from another player.",
+                { mapID = 1433, x = 0.272, y = 0.668, label = "Great Goretusk search area" },
+                "Creatures in Redridge may carry a recipe with an unusual effect."),
+            {
+                title = "Fish for Whimsyfin",
+                note = "Look for schools of Whimsyfin in Redridge Mountains. Use Next Location to check "
+                    .. "other reported fishing areas if a school is missing.",
+                clue = "Check the waters of Redridge for a school of unusual fish.",
+                waypoints = {
+                    { mapID = 1433, x = 0.608, y = 0.699, label = "Whimsyfin school search area" },
+                    { mapID = 1433, x = 0.619, y = 0.706, label = "Nearby Whimsyfin search area" },
+                    { mapID = 1433, x = 0.744, y = 0.624, label = "Eastern Whimsyfin search area" },
+                },
+            },
+            routeStep("Cook the delight",
+                "Learn the recipe at Cooking 85. Use a cooking fire and combine one Whimsyfin with one Mild Spices. "
+                    .. "Eating the delight gives a random Orc ninja or pirate disguise.",
+                nil, "Combine the fish with a common seasoning over a cooking fire."),
+        },
+    })
+end
+
+local function malignantRootRoute()
+    return ns.NormalizeSecretRoute({
+        id = "malignant-root",
+        title = "Malignant Root",
+        sourceURL = "https://www.method.gg/wow-forever/how-to-get-malignant-root-powerful-rare-ring-in-wow-forever",
+        steps = {
+            {
+                title = "Obtain Rotheap Innards",
+                note = "Focus your search in the Wetlands waterways at night by realm time. Nightveiled Rotheap is a roaming "
+                    .. "level 31–32 elite. Loot its Rotheap Innards or obtain the tradable innards from another player. "
+                    .. "The coastal pins are reported search areas.",
+                clue = "Search the Wetlands waterways for a creature that stirs at night.",
+                waypoints = {
+                    { mapID = 1437, x = 0.190, y = 0.520, label = "Southern Rotheap search area" },
+                    { mapID = 1437, x = 0.180, y = 0.230, label = "Central Rotheap search area" },
+                    { mapID = 1437, x = 0.290, y = 0.170, label = "Northern Rotheap search area" },
+                },
+            },
+            routeStep("Trade with the Greenwarden",
+                "Alliance only. Bring the Rotheap Innards to Rethiel the Greenwarden in the Green Belt. "
+                    .. "Speak to him with the innards in your bags and select the exchange dialogue to get "
+                    .. "Malignant Root. The exchange takes place outside the quest log.",
+                { mapID = 1437, x = 0.562, y = 0.405, label = "Rethiel the Greenwarden" },
+                "A guardian in the Green Belt may want what you found."),
+        },
+    })
+end
+
+local function dwarvenTradeskillSignpostRoute()
+    return ns.NormalizeSecretRoute({
+        id = "dwarven-tradeskill-signpost",
+        title = "Dwarven Tradeskill Signpost",
+        sourceURL = "https://guided.news/en/guides/wow-forever-profession-sign-ironforge-quest-route-materials/",
+        steps = {
+            routeStep("Buy the license application",
+                "Alliance only. Reach Honored with the Azeroth Commerce Authority, then buy the Advertising "
+                    .. "License Application from Tamelyn Aldridge at the Three Corners trading post in Redridge "
+                    .. "Mountains for 1,200 Merchant's Favor. Use it to start Sign Me Up!",
+                { mapID = 1433, x = 0.106, y = 0.713, label = "Tamelyn Aldridge" },
+                "Ask the Alliance supply officer how to advertise a trade."),
+            routeStep("Submit the completed forms",
+                "Use the provided Massive Pile of Forms in your bags. Follow the quest marker in the Three Corners "
+                    .. "camp to Elaine Compton, hand in the completed forms, and accept Rotgath Stonebeard.",
+                { mapID = 1433, x = 0.102, y = 0.712, label = "Elaine Compton's camp (approximate)" },
+                "Finish the paperwork and bring it to the contract coordinator."),
+            routeStep("Craft the signpost in Ironforge",
+                "Find Rotgath Stonebeard at the Great Forge in Ironforge. Turn in the introduction and accept A Quick "
+                    .. "Craft. Bring 25 Mithril Bars, 15 Heavy Leather, and 5 Goldthorn to receive the toy and choose "
+                    .. "one profession sign. Use the chosen sign item to register it, then use the toy on a character "
+                    .. "who knows that profession.",
+                { mapID = 1455, x = 0.524, y = 0.425, label = "Rotgath Stonebeard" },
+                "A crafter at the Great Forge can make the sign."),
+        },
+    })
+end
+
 function ns.StandaloneSecrets()
     -- Route facts cross-checked against the Forever guides from Method and Wowhead.
     local source = "https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards"
@@ -1116,6 +1202,11 @@ function ns.StandaloneSecrets()
     routes[#routes + 1] = travelersSymbolsRoute()
     if not alliance then
         routes[#routes + 1] = bloodyMapRoute()
+    end
+    routes[#routes + 1] = savoryWhimsyfinDelightRoute()
+    if alliance then
+        routes[#routes + 1] = malignantRootRoute()
+        routes[#routes + 1] = dwarvenTradeskillSignpostRoute()
     end
     return routes
 end
