@@ -47,6 +47,9 @@ local function makeLine(parent, layer, width, red, green, blue, alpha)
     return line
 end
 
+local stylePlate = frame:CreateTexture(nil, "BACKGROUND", nil, -1)
+stylePlate:Hide()
+
 local arc = {}
 for index = 1, 40 do
     local fromX = -halfWidth + (index - 1) * halfWidth / 20
@@ -62,8 +65,9 @@ local detailLayer = CreateFrame("Frame", "SecretsCompassStyleDetails", frame)
 detailLayer:SetAllPoints(frame)
 local details = {}
 local function positionStyleDetails()
-    local color = activeStyle.arc
+    ns.PositionCompassStylePlate(stylePlate, frame, activeStyle, 1, 0)
     for index, decoration in ipairs(activeStyle.details) do
+        local color = decoration[7] or activeStyle.arc
         local width, alpha = decoration[5] or 1, decoration[6] or 0.45
         local line = details[index]
         if not line then
@@ -127,7 +131,7 @@ local function updateHeading(heading)
             tick.label:SetShown(visible and settings.showCardinals)
         end
         if visible then
-            local x = offset * halfWidth / halfView
+            local x = offset * (activeStyle.trackHalfWidth or halfWidth) / halfView
             local y = arcY(x)
             local length = tick.label and 9 or 5
             if activeStyle.tickBelow then
@@ -236,7 +240,7 @@ local function updateWaypoint(heading, bearing, distance, approximate)
     end
     local offset, edge = markerOffset(heading, bearing, approximate and 1 or distance)
     if offset ~= previousOffset then
-        local x = offset * halfWidth / halfView
+        local x = offset * (activeStyle.trackHalfWidth or halfWidth) / halfView
         waypoint:ClearAllPoints()
         waypoint:SetPoint("CENTER", frame, "CENTER", x, arcY(x) + 37)
         if previousOffset == nil or (offset > 60) ~= (previousOffset > 60) then

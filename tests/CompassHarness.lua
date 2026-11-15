@@ -71,7 +71,13 @@ function methods:CreateLine()
     self.lines[#self.lines + 1] = line
     return line
 end
-function methods:CreateTexture() return region(self) end
+function methods:CreateTexture(_name, layer, _template, sublevel)
+    local texture = region(self)
+    texture.drawLayer, texture.sublevel = layer, sublevel
+    self.textures = self.textures or {}
+    self.textures[#self.textures + 1] = texture
+    return texture
+end
 function methods:CreateFontString(name)
     local label = region(self)
     if name then _G[name] = label end
@@ -483,8 +489,46 @@ local previewArcY = panel.preview.arc[1].start[4]
 click(controls.styles.bar)
 assert(panel.preview.arc[1].start[4] ~= previewArcY, "Style updates the settings preview while the HUD is hidden")
 assert(ForeverCompassDB.style == "bar", "Style persists separately")
-assert(frame.lines[1].start[4] == frame.lines[20].finish[4], "Framed style has a straight baseline")
-click(controls.styles.tactical)
+do
+    local plate = assert(frame.textures[1])
+    local previewPlate = panel.preview.stylePlate
+    assert(plate:IsShown() and previewPlate:IsShown()
+        and plate.drawLayer == "BACKGROUND" and plate.sublevel == -1
+        and previewPlate.drawLayer == "BACKGROUND" and previewPlate.sublevel == -1,
+        "Framed draws a plate behind both sets of compass ticks")
+    local ratio = previewPlate:GetWidth() / plate:GetWidth()
+    assert(ratio < 1 and math.abs(previewPlate:GetHeight() - plate:GetHeight() * ratio) < 0.001
+        and table.concat(previewPlate.color, ",") == table.concat(plate.color, ","),
+        "Framed plate has the same proportions and color in both renderers")
+    assert(not frame.lines[20]:IsShown() and not panel.preview.arc[20]:IsShown(),
+        "Framed leaves the plate free of a line through its center")
+
+    local ornaments = SecretsCompassStyleDetails.lines
+    local previewOrnaments = panel.preview.details
+    for index = 1, #ornaments do
+        local live, previewDetail = ornaments[index], previewOrnaments[index]
+        if live:IsShown() then
+            assert(previewDetail:IsShown()
+                and math.abs(previewDetail.start[3] - live.start[3] * ratio) < 0.001
+                and math.abs(previewDetail.finish[3] - live.finish[3] * ratio) < 0.001
+                and math.abs(previewDetail.finish[4] - previewDetail.start[4]
+                    - (live.finish[4] - live.start[4]) * ratio) < 0.001
+                and table.concat(previewDetail.color, ",") == table.concat(live.color, ","),
+                "Framed rails, caps, and caret share geometry and color")
+        end
+    end
+    slash("move")
+    facing = -math.rad(109)
+    advance()
+    assert(math.abs(labelX("N")) < plate:GetWidth() / 2
+        and heading.lines[1].start[4] < heading.lines[1].finish[4],
+        "The cardinal remains inside the plate while its tick points below the label")
+    facing = 0
+    slash("move")
+    click(controls.styles.tactical)
+    assert(not plate:IsShown() and not previewPlate:IsShown(),
+        "Switching styles removes the Framed plate in both renderers")
+end
 assert(frame.lines[20].finish[4] < frame.lines[1].start[4], "Tactical has a center notch")
 click(controls.styles.flight)
 assert(not frame.lines[20]:IsShown() and SecretsCompassStyleDetails.lines[1]:IsShown(),

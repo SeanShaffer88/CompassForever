@@ -1,5 +1,7 @@
 local _, namespace = ...
 local secretColor = {0.82, 0.47, 1}
+local framedRail = {0.31, 0.78, 0.98}
+local framedSteel = {0.41, 0.54, 0.66}
 
 -- Baselines, gaps, and decorations use the same 560-unit canvas in the HUD and preview.
 local styles = {
@@ -8,8 +10,21 @@ local styles = {
         y = function(f) return -62 * f * f end,
     },
     {
-        id = "bar", name = "Framed", width = 1.5, arc = {0.78, 0.91, 1}, labelInset = 18,
-        details = { {-280, 14, 280, 14}, {-280, -14, 280, -14}, {-280, -14, -280, 14}, {280, -14, 280, 14} },
+        id = "bar", name = "Framed", width = 1.5, arc = {0.86, 0.95, 1},
+        labelInset = 2, tickBelow = true, trackHalfWidth = 228,
+        plate = { width = 492, height = 52, color = {0.05, 0.10, 0.16, 0.95} },
+        show = function() return false end,
+        details = {
+            {-246,  26, 246,  26, 6, 0.30, framedRail}, {-246, -26, 246, -26, 6, 0.30, framedRail},
+            {-246,  26, 246,  26, 2, 0.94, framedRail}, {-246, -26, 246, -26, 2, 0.94, framedRail},
+            {-246,  26, -262,  32, 5, 1, framedSteel}, {-262,  32, -278,  16, 5, 1, framedSteel},
+            {-278,  16, -278, -16, 5, 1, framedSteel}, {-278, -16, -262, -32, 5, 1, framedSteel},
+            {-262, -32, -246, -26, 5, 1, framedSteel}, {-262, -13, -262,  13, 3, 1, framedRail},
+            {246,  26, 262,  32, 5, 1, framedSteel}, {262,  32, 278,  16, 5, 1, framedSteel},
+            {278,  16, 278, -16, 5, 1, framedSteel}, {278, -16, 262, -32, 5, 1, framedSteel},
+            {262, -32, 246, -26, 5, 1, framedSteel}, {262, -13, 262,  13, 3, 1, framedRail},
+            {-9, -39, 0, -30, 1.75, 1}, {0, -30, 9, -39, 1.75, 1},
+        },
     },
     {
         id = "tactical", name = "Tactical", width = 2, arc = {0.66, 1, 0.72},
@@ -89,6 +104,16 @@ for _, style in ipairs(styles) do
     style.secret = secretColor
     style.details = style.details or {}
     byID[style.id] = style
+end
+
+function namespace.PositionCompassStylePlate(texture, parent, style, scale, baseline)
+    local plate = style.plate
+    if plate then
+        texture:SetPoint("CENTER", parent, "CENTER", 0, baseline)
+        texture:SetSize(plate.width * scale, plate.height * scale)
+        texture:SetColorTexture(unpack(plate.color))
+    end
+    texture:SetShown(plate ~= nil)
 end
 
 namespace.CompassStyles = styles
