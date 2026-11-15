@@ -1127,6 +1127,91 @@ local function dwarvenTradeskillSignpostRoute()
     })
 end
 
+local function aTasteOfHomeRoute()
+    local arille = { mapID = 1416, x = 0.185, y = 0.657, label = "Arille Azuregaze" }
+    return ns.NormalizeSecretRoute({
+        id = "a-taste-of-home",
+        title = "A Taste of Home",
+        sourceURL = "https://www.wowhead.com/forever/quest=96609/a-taste-of-home#comments",
+        steps = {
+            routeStep("Accept A Taste of Home",
+                "Alliance, level 44 or higher. Speak with bartender Arille Azuregaze in the open-world city of Dalaran. "
+                    .. "If you need access to the city, start An Alarming Request with Emissary Jacques in Southshore "
+                    .. "and follow the City of Dalaran quest chain.",
+                arille, "A bartender in Dalaran misses a drink from home."),
+            routeStep("Collect ten bottles of Shimmerwine",
+                "Loot 10 bottles of Silvermoon Shimmerwine from blood elves in northern Azshara. Search around the "
+                    .. "Thalassian Base Camp for Blood Elf Reclaimers and other blood elves.",
+                { mapID = 1447, x = 0.564, y = 0.288, label = "Blood Elf Reclaimer search area" },
+                "Look for a camp of blood elves in northeastern Kalimdor."),
+            routeStep("Return to Arille Azuregaze",
+                "Deliver the 10 bottles to Arille in Dalaran to receive Everlasting Silvermoon Shimmerwine.",
+                arille, "Return to the bartender who asked for the wine."),
+        },
+    })
+end
+
+local function orcishTradeskillSignpostRoute()
+    return ns.NormalizeSecretRoute({
+        id = "orcish-tradeskill-signpost",
+        title = "Orcish Tradeskill Signpost",
+        sourceURL = "https://www.wowhead.com/forever/guide/durotar-supply-and-logistics-reputation-professions",
+        steps = {
+            routeStep("Buy the license application",
+                "Horde only. Reach Honored with Durotar Supply and Logistics, then buy the Advertising License "
+                    .. "Application from Gishah at the supply camp near the Crossroads for 1,200 Merchant's Favor. "
+                    .. "Use the application to start Sign Me Up!",
+                { mapID = 1413, x = 0.494, y = 0.294, label = "Gishah" },
+                "Ask the Horde supply officer how to advertise a trade."),
+            routeStep("Submit the completed forms",
+                "Use the provided Massive Pile of Forms in your bags. Follow the quest marker in the supply camp "
+                    .. "to Jornah, hand in the completed forms, and accept Karolek.",
+                { mapID = 1413, x = 0.498, y = 0.294, label = "Jornah's camp (approximate)" },
+                "Finish the paperwork and bring it to the contract coordinator."),
+            routeStep("Craft the signpost in Orgrimmar",
+                "Find Karolek at Kodohide Leatherworkers in the Drag. Turn in the introduction and accept A Quick "
+                    .. "Craft. Bring 30 Heavy Leather, 12 Mithril Bars, and 5 Goldthorn to receive the toy and choose "
+                    .. "one profession sign. Use the chosen sign item to register it, then use the toy on a character "
+                    .. "who knows that profession.",
+                { mapID = 1454, x = 0.628, y = 0.444, label = "Karolek" },
+                "A leatherworker in the Drag can make the sign."),
+        },
+    })
+end
+
+local function fizsprocketsNotesRoute()
+    return ns.NormalizeSecretRoute({
+        id = "fizsprockets-notes",
+        title = "Fizsprocket's Notes",
+        sourceURL = "https://www.wowhead.com/forever/quest=98424/fizsprockets-notes#comments",
+        steps = {
+            routeStep("Find the Mulgore Expansion Plans",
+                "Horde, level 5 or higher. Search inside the Venture Co. Mine for Supervisor Fizsprocket. "
+                    .. "Loot the Mulgore Expansion Plans from him and use them to start Fizsprocket's Notes. "
+                    .. "The pin marks the approximate south entrance.",
+                { mapID = 1412, x = 0.610, y = 0.470, label = "South mine entrance (approximate)" },
+                "The supervisor at the Venture Co. Mine is carrying plans."),
+            routeStep("Find Shredder Operation Instructions",
+                "Pick up the Shredder Operation Instructions inside the Venture Co. Mine.",
+                { mapID = 1412, x = 0.586, y = 0.473, label = "Shredder Operation Instructions (approximate)" },
+                "Look for instructions left among the mining equipment."),
+            routeStep("Find One \"Gerenzo\", of Stonetalon",
+                "Pick up One \"Gerenzo\", of Stonetalon inside the Venture Co. Mine.",
+                { mapID = 1412, x = 0.590, y = 0.464, label = "Gerenzo notes (approximate)" },
+                "Look for notes about someone from Stonetalon."),
+            routeStep("Find Barrens Operations Best Practices",
+                "Pick up Barrens Operations Best Practices inside the Venture Co. Mine.",
+                { mapID = 1412, x = 0.617, y = 0.473, label = "Barrens Operations Best Practices (approximate)" },
+                "Look for the company's notes on its Barrens operations."),
+            routeStep("Deliver the notes to Morin Cloudstalker",
+                "Find Morin Cloudstalker patrolling the road east of Bloodhoof Village. "
+                    .. "Turn in the plans and all three pages to finish Fizsprocket's Notes.",
+                { mapID = 1412, x = 0.548, y = 0.643, label = "Morin Cloudstalker patrol (approximate)" },
+                "Someone on the road near Bloodhoof Village can make use of the plans."),
+        },
+    })
+end
+
 function ns.StandaloneSecrets()
     -- Route facts cross-checked against the Forever guides from Method and Wowhead.
     local source = "https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards"
@@ -1207,6 +1292,10 @@ function ns.StandaloneSecrets()
     if alliance then
         routes[#routes + 1] = malignantRootRoute()
         routes[#routes + 1] = dwarvenTradeskillSignpostRoute()
+        routes[#routes + 1] = aTasteOfHomeRoute()
+    else
+        routes[#routes + 1] = orcishTradeskillSignpostRoute()
+        routes[#routes + 1] = fizsprocketsNotesRoute()
     end
     return routes
 end

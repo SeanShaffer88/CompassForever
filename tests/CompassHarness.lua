@@ -979,6 +979,11 @@ do
         ["savory-whimsyfin-delight"] = { {1433, 272, 668}, {1433, 608, 699}, {1433, 619, 706}, {1433, 744, 624} },
         ["malignant-root"] = { {1437, 190, 520}, {1437, 180, 230}, {1437, 290, 170}, {1437, 562, 405} },
         ["dwarven-tradeskill-signpost"] = { {1433, 106, 713}, {1433, 102, 712}, {1455, 524, 425} },
+        ["a-taste-of-home"] = { {1416, 185, 657}, {1447, 564, 288} },
+        ["orcish-tradeskill-signpost"] = { {1413, 494, 294}, {1413, 498, 294}, {1454, 628, 444} },
+        ["fizsprockets-notes"] = {
+            {1412, 610, 470}, {1412, 586, 473}, {1412, 590, 464}, {1412, 617, 473}, {1412, 548, 643},
+        },
         ["manual-scavenger-hunt"] = {
             {1417, 226.9, 241.7}, {1424, 876.1, 479.1}, {1458, 228.6, 361.9},
             {2548, 265.6, 455.8}, {2548, 267.2, 477.4}, {1419, 451.9, 164.7},
@@ -991,7 +996,7 @@ do
         slash("secrets")
         local choices = namespace.StandaloneSecrets()
         local isAlliance = side == "Alliance"
-        local expectedCount = isAlliance and 15 or 14
+        local expectedCount = 16
         assert(#choices == expectedCount
             and secrets.progress:GetText() == ("0 of %d Built-In Routes Finished"):format(expectedCount),
             "Faction-specific additions update the journal count")
@@ -1019,10 +1024,15 @@ do
                 "Alliance receives Silver of the Waves and Applejack Still")
             local root = choices[14]
             local signpost = choices[15]
+            local wine = choices[16]
             assert(root.id == "malignant-root" and #root.steps == 2 and #root.steps[1].waypoints == 3
                 and #root.steps[2].waypoints == 1
-                and signpost.id == "dwarven-tradeskill-signpost" and #signpost.steps == 3,
-                "Alliance receives the night patrol and signpost routes")
+                and signpost.id == "dwarven-tradeskill-signpost" and #signpost.steps == 3
+                and wine.id == "a-taste-of-home" and #wine.steps == 3,
+                "Alliance keeps its route order and receives A Taste of Home")
+            assert(not secrets.controls.routes["orcish-tradeskill-signpost"]:IsVisible()
+                and not secrets.controls.routes["fizsprockets-notes"]:IsVisible(),
+                "Alliance cannot see the new Horde routes")
         else
             assert(choices[9].id == "excitable-slime" and choices[10].id == "whispering-horror-residue",
                 "Horde receives Excitable Slime and Whispering Horror Residue")
@@ -1032,10 +1042,13 @@ do
                 and bloodyMap.steps[3].waypoints[1].x == bloodyMap.steps[5].waypoints[1].x
                 and bloodyMap.steps[3].waypoints[1].y == bloodyMap.steps[5].waypoints[1].y,
                 "The Horde route returns to the same agent before reaching a text-only checkpoint")
+            assert(choices[15].id == "orcish-tradeskill-signpost" and #choices[15].steps == 3
+                and choices[16].id == "fizsprockets-notes" and #choices[16].steps == 5,
+                "Horde receives the signpost and mine routes after the existing routes")
         end
         local lastRow = secrets.controls.routes[choices[expectedCount].id]
         local _, _, rowY = lastRow:GetPoint()
-        assert(secrets:GetHeight() == (isAlliance and 681 or 651)
+        assert(secrets:GetHeight() == 711
             and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
             "The last route row fits above navigation")
         for i = 3, #choices do
@@ -1095,7 +1108,27 @@ do
     local slime = secrets.controls.routes["excitable-slime"]
     click(slime)
     click(secrets.controls.routes["bloody-map"])
+    click(secrets.controls.routes["orcish-tradeskill-signpost"])
+    click(secrets.controls.routes["fizsprockets-notes"])
     assert(not SecretCompassSecretDB.route, "A stale Horde route row cannot start on Alliance")
+
+    local wine = secrets.controls.routes["a-taste-of-home"]
+    click(wine)
+    assert(secrets.routeTitle:GetText() == "A Taste of Home"
+        and not secrets.controls.mapCommand:IsVisible(), "Alliance can open the Dalaran route with clues only")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1416 18.50 65.70",
+        "The Dalaran bartender waypoint can be copied")
+    click(secrets.controls.next)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1447 56.40 28.80",
+        "Next leads to the Azshara wine search area")
+    click(secrets.controls.next)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1416 18.50 65.70",
+        "The third step returns to the Dalaran bartender")
+    click(secrets.controls.stop)
 
     click(secrets.controls.routes["blessing-of-kalimdor"])
     assert(secrets.routeTitle:GetText() == "Blessing of Kalimdor" and not secrets.controls.mapCommand:IsVisible(),
@@ -1141,11 +1174,25 @@ do
     local root = secrets.controls.routes["malignant-root"]
     local signpost = secrets.controls.routes["dwarven-tradeskill-signpost"]
     assert(not applejack:IsVisible() and not silver:IsVisible()
-        and not root:IsVisible() and not signpost:IsVisible(), "Alliance rows are hidden on Horde")
+        and not root:IsVisible() and not signpost:IsVisible() and not wine:IsVisible(),
+        "Alliance rows are hidden on Horde")
     click(applejack)
     click(root)
     click(signpost)
+    click(wine)
     assert(not SecretCompassSecretDB.route, "A stale Alliance route row cannot start on Horde")
+
+    click(secrets.controls.routes["fizsprockets-notes"])
+    assert(secrets.routeTitle:GetText() == "Fizsprocket's Notes"
+        and not secrets.controls.mapCommand:IsVisible(), "Horde can open the mine route with clues only")
+    click(secrets.controls.revealFull)
+    slash("step 3")
+    assert(secrets.stepTitle:GetText() == "Find One \"Gerenzo\", of Stonetalon",
+        "Full mode names the document at the selected mine stop")
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1412 59.00 46.40",
+        "The selected mine waypoint can be copied")
+    click(secrets.controls.stop)
 
     click(secrets.controls.routes["savory-whimsyfin-delight"])
     assert(secrets.routeTitle:GetText() == "Savory Whimsyfin Delight" and not secrets.controls.mapCommand:IsVisible(),
