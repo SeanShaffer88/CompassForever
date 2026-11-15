@@ -648,6 +648,16 @@ local function initSecrets()
         collapsedCategories = {}
         SecretCompassSecretDB.collapsedCategories = collapsedCategories
     end
+    local function standaloneRoutes()
+        return ns.StandaloneSecrets and ns.StandaloneSecrets() or {}
+    end
+    local function resolveBuiltIn(id, sourceURL)
+        for _, route in ipairs(standaloneRoutes()) do
+            if route.id == id and route.sourceURL == sourceURL then
+                return route
+            end
+        end
+    end
     secretTracker = ns.CreateSecretTracker(SecretCompassSecretDB, function()
         if not secretTracker then
             return
@@ -658,7 +668,7 @@ local function initSecrets()
         if secretsUI then
             secretsUI:Refresh()
         end
-    end)
+    end, resolveBuiltIn)
     navigationMode = readable(SecretCompassSecretDB.navigation) and SecretCompassSecretDB.navigation == "external"
         and "external" or "hud"
     secretNavigation = ns.CreateWaypointNavigation(function(status)
@@ -668,9 +678,6 @@ local function initSecrets()
             secretsUI:RefreshStatus()
         end
     end)
-    local function standaloneRoutes()
-        return ns.StandaloneSecrets and ns.StandaloneSecrets() or {}
-    end
     secretsUI = ns.CreateSecretsUI({
         getRoute = function() return secretTracker:GetRoute() end,
         getCurrentStep = function() return secretTracker:GetCurrentStep() end,
@@ -703,6 +710,8 @@ local function initSecrets()
         end,
         getRoutes = standaloneRoutes,
         getResumeStep = function(route) return secretTracker:GetResumeStep(route) end,
+        getLastPausedRoute = function() return secretTracker:GetLastPausedRoute() end,
+        continueLast = function() secretTracker:ContinueLastSecret() end,
         hasFinished = function(route) return secretTracker:HasFinished(route) end,
         start = function(id)
             for _, route in ipairs(standaloneRoutes()) do

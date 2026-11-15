@@ -382,6 +382,7 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
         self:SetText("")
         self:ClearFocus()
     end)
+    controls.continueLast = button(body, "Continue Last Secret", 150, 256, -85, api.continueLast)
     controls.routeExpandAll = button(body, "Expand All", 98, 18, -177, function() setAllCategories(nil) end)
     controls.routeCollapseAll = button(body, "Collapse All", 104, 124, -177, function() setAllCategories(true) end)
     controls.routeStatus = button(body, "", 154, 252, -177, cycleStatus)
@@ -586,6 +587,9 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
         for _, heading in pairs(controls.routeHeadings) do
             heading:Hide()
         end
+        local canContinue = not tracking and api.getLastPausedRoute() ~= nil
+        controls.continueLast:SetShown(canContinue)
+        panel.progress:SetWidth(canContinue and 228 or 390)
         controls.routeSearch:SetShown(not tracking)
         controls.routeCategory:SetShown(not tracking)
         controls.routeExpandAll:SetShown(not tracking)

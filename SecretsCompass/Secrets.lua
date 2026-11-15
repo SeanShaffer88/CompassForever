@@ -191,7 +191,41 @@ local function matchingCheckpoint(route, checkpoint)
     end
 end
 
-function ns.CreateSecretTracker(savedState, onChanged)
+local function isImportedRoute(route)
+    return route.sourceURL ~= nil and route.id == "secret-checklist:" .. route.sourceURL
+end
+
+local function normalizeLastPaused(raw)
+    if not readable(raw) or type(raw) ~= "table" or not readable(raw.id) or not readable(raw.sourceURL) then
+        return
+    end
+    local id, sourceURL = safeText(raw.id, 404), safeURL(raw.sourceURL)
+    if not id or id ~= raw.id or (raw.sourceURL ~= nil and not sourceURL) then
+        return
+    end
+
+    local paused = { id = id, sourceURL = sourceURL }
+    if isImportedRoute(paused) then
+        local route = ns.NormalizeSecretRoute(raw.route)
+        local index, location = raw.index, raw.locationIndex
+        if not route or route.id ~= id or route.sourceURL ~= sourceURL or not validID(index)
+            or not validID(location) or #route.steps ~= #raw.route.steps then
+            return
+        end
+        local step = route.steps[index]
+        if not step or location > math.max(1, #step.waypoints) then
+            return
+        end
+        local originalPoints = raw.route.steps[index].waypoints
+        if not readable(originalPoints) or type(originalPoints) ~= "table" or #originalPoints ~= #step.waypoints then
+            return
+        end
+        paused.route, paused.index, paused.locationIndex = route, index, location
+    end
+    return paused
+end
+
+function ns.CreateSecretTracker(savedState, onChanged, resolveBuiltIn)
     local tracker = {}
     local reveals, revealCount = {}, 0
     if readable(savedState.reveals) and type(savedState.reveals) == "table" then
@@ -222,6 +256,7 @@ function ns.CreateSecretTracker(savedState, onChanged)
         end
     end
     savedState.checkpoints = checkpoints
+    savedState.lastPaused = normalizeLastPaused(savedState.lastPaused)
 
     local finishedRoutes, finishedCount = {}, 0
     if readable(savedState.finishedRoutes) and type(savedState.finishedRoutes) == "table" then
@@ -256,7 +291,11 @@ function ns.CreateSecretTracker(savedState, onChanged)
         end
         if not checkpoints[route.id] then
             if checkpointCount == maxCheckpoints then
-                forget(next(checkpoints))
+                local candidate = next(checkpoints)
+                if savedState.lastPaused and candidate == savedState.lastPaused.id then
+                    candidate = next(checkpoints, candidate)
+                end
+                forget(candidate)
             end
             checkpointCount = checkpointCount + 1
         end
@@ -267,6 +306,13 @@ function ns.CreateSecretTracker(savedState, onChanged)
         savedState.index = route and boundedIndex(index, #route.steps) or nil
         local step = route and route.steps[savedState.index]
         savedState.locationIndex = step and boundedIndex(locationIndex, #step.waypoints) or nil
+    end
+
+    local function consumeLastPaused(route)
+        local last = savedState.lastPaused
+        if last and last.id == route.id and last.sourceURL == route.sourceURL then
+            savedState.lastPaused = nil
+        end
     end
 
     select(ns.NormalizeSecretRoute(savedState.route), savedState.index, savedState.locationIndex)
@@ -355,6 +401,37 @@ function ns.CreateSecretTracker(savedState, onChanged)
         return clean ~= nil and not clean.ongoing and hasFinishRecord(clean)
     end
 
+    function tracker:GetLastPausedRoute()
+        local last = savedState.lastPaused
+        if savedState.route or not last then
+            return
+        end
+        if last.route then
+            return last.route, last.index, last.locationIndex
+        end
+        local checkpoint = checkpoints[last.id]
+        if type(resolveBuiltIn) == "function" and checkpoint then
+            local route = ns.NormalizeSecretRoute(resolveBuiltIn(last.id, last.sourceURL))
+            if route and route.id == last.id and route.sourceURL == last.sourceURL then
+                local index, location = matchingCheckpoint(route, checkpoint)
+                if index then
+                    return route, index, location
+                end
+            end
+        end
+    end
+
+    function tracker:ContinueLastSecret()
+        local route, index, location = self:GetLastPausedRoute()
+        if not route then
+            return false
+        end
+        select(route, index, location)
+        consumeLastPaused(route)
+        onChanged()
+        return true
+    end
+
     function tracker:Track(route)
         local clean = ns.NormalizeSecretRoute(route)
         if not clean then
@@ -371,6 +448,7 @@ function ns.CreateSecretTracker(savedState, onChanged)
         end
         local checkpointIndex, checkpointLocation = resumeStep(clean, checkpoint)
         select(clean, checkpointIndex, checkpointLocation)
+        consumeLastPaused(clean)
         onChanged()
         return true
     end
@@ -409,6 +487,12 @@ function ns.CreateSecretTracker(savedState, onChanged)
             return false
         end
         remember(route, index, locationIndex)
+        local paused = { id = route.id, sourceURL = route.sourceURL }
+        if isImportedRoute(route) then
+            -- Imported guides may repeat step titles. Resume the selected step in the saved snapshot.
+            paused.route, paused.index, paused.locationIndex = route, index, locationIndex
+        end
+        savedState.lastPaused = paused
         select(nil)
         onChanged()
         return true
@@ -428,6 +512,7 @@ function ns.CreateSecretTracker(savedState, onChanged)
         end
         finishedRoutes[route.id] = { sourceURL = route.sourceURL }
         forget(route.id)
+        consumeLastPaused(route)
         select(nil)
         onChanged()
         return true

@@ -1854,4 +1854,85 @@ do
         "Reopening a restored category updates SavedVariables and shows its routes")
 end
 
+do
+    local runtimeTracker
+    local function reloadJournal(saved)
+        SecretCompassSecretDB = saved
+        assert(loadfile(addonPath .. "/SecretsCompass.lua"))("SecretsCompass", namespace)
+        local factory = namespace.CreateSecretTracker
+        namespace.CreateSecretTracker = function(...)
+            runtimeTracker = factory(...)
+            return runtimeTracker
+        end
+        local loginFrame = SecretsCompassFrame
+        loginFrame.scripts.OnEvent(loginFrame, "ADDON_LOADED", "SecretsCompass")
+        namespace.CreateSecretTracker = factory
+        SlashCmdList.SECRETSCOMPASS("secrets")
+        return SecretsCompassSecrets
+    end
+
+    local condor
+    for _, choice in ipairs(namespace.StandaloneSecrets()) do
+        if choice.id == "condor-hatchling" then
+            condor = choice
+        end
+    end
+    assert(condor)
+    local saved = {
+        route = condor, index = 1, locationIndex = 2,
+        reveals = { [condor.id] = "coordinates" },
+    }
+    local journal = reloadJournal(saved)
+    assert(not journal.controls.continueLast:IsVisible(), "The shortcut is hidden during active tracking")
+    click(journal.controls.stop)
+    local bookmark = assert(saved.lastPaused)
+    assert(journal.controls.continueLast:IsVisible(), "Pausing creates the Continue Last Secret shortcut")
+
+    saved.lastPaused = nil
+    journal = reloadJournal(saved)
+    assert(not journal.controls.continueLast:IsVisible()
+        and journal.controls.routes[condor.id].action:GetText() == "Resume · Step 1",
+        "A legacy checkpoint remains resumable without inventing a most recently paused route")
+
+    saved.lastPaused = bookmark
+    journal = reloadJournal(saved)
+    journal.controls.routeSearch:SetText("no matching secret")
+    local shortcut = journal.controls.continueLast
+    assert(shortcut:IsVisible() and shortcut:GetText() == "Continue Last Secret"
+        and journal.controls.routeEmpty:IsVisible(), "The restored shortcut is independent of browse filters")
+    click(shortcut)
+    assert(saved.route.id == condor.id and saved.index == 1 and saved.locationIndex == 2
+        and journal.progress:GetText():find("Location 2 of 3", 1, true) and not shortcut:IsVisible(),
+        "Continuing a built-in route restores its exact step and alternate location")
+    click(journal.controls.mapCommand)
+    assert(journal.controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90")
+
+    local guideURL = "https://example.com/duplicate-title"
+    local imported = {
+        id = "secret-checklist:" .. guideURL, sourceURL = guideURL, title = condor.title,
+        steps = {
+            { title = "Find the lead", waypoints = { { mapID = 1, x = 0.25, y = 0.30 } } },
+            { title = "Find the lead", waypoints = {
+                { mapID = 1, x = 0.32, y = 0.40 },
+                { mapID = 4, x = 0.10, y = 0.20 },
+            } },
+        },
+    }
+    assert(runtimeTracker:Track(imported) and runtimeTracker:Jump(2) and runtimeTracker:CycleLocation())
+    runtimeTracker:SetReveal("coordinates")
+    click(journal.controls.stop)
+    SecretChecklist = nil
+    journal = reloadJournal(saved)
+    click(journal.controls.continueLast)
+    assert(saved.route.id == imported.id and saved.route.title == condor.title and saved.index == 2
+        and saved.locationIndex == 2 and journal.progress:GetText():find("Location 2 of 2", 1, true),
+        "The most recent imported route survives reload without SecretChecklist and is matched by identity")
+    click(journal.controls.mapCommand)
+    assert(journal.controls.mapCommandInput:GetText() == "/mappin 4 10.00 20.00",
+        "The imported guide's exact alternate location is usable after reload")
+    click(journal.controls.next)
+    assert(saved.route == nil and saved.lastPaused == nil and not journal.controls.continueLast:IsVisible(),
+        "Finishing the continued route clears the saved shortcut")
+end
+
 print("SecretsCompass mocks passed: secret-only tracking, HUD controls, categorized standalone secrets, spoiler levels, verified progress, the SecretChecklist companion, and external waypoint navigation")
