@@ -785,6 +785,11 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
             settings[key] = settings[key] ~= false
         end
         settings.theme, settings.showQuests, settings.showWaypoint = nil, nil, nil
+        if not readable(settings.minimap) or type(settings.minimap) ~= "table" then
+            settings.minimap = {}
+        end
+        local angle = settings.minimap.minimapPos
+        settings.minimap.minimapPos = finite(angle) and angle % 360 or 225
         if type(settings.style) ~= "string" or not stylesByID[settings.style] then
             settings.style = styles[1].id
         end
@@ -801,6 +806,7 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
         if ns and ns.CreateSettingsUI then
             settingsUI = ns.CreateSettingsUI({
                 get = function() return settings end,
+                finite = finite,
                 set = setPreference,
                 styles = styles,
                 minScale = minScale,
@@ -812,7 +818,15 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
                 resetPosition = resetPosition,
                 openSecrets = secretsUI and function() secretsUI:Open() end,
             })
+            if IsLoggedIn and IsLoggedIn() then
+                settingsUI:AttachMinimap()
+            else
+                self:RegisterEvent("PLAYER_LOGIN")
+            end
         end
+    elseif event == "PLAYER_LOGIN" then
+        self:UnregisterEvent("PLAYER_LOGIN")
+        settingsUI:AttachMinimap()
     elseif event == "PLAYER_ENTERING_WORLD" then
         local route = secretTracker and secretTracker:GetRoute()
         if route and route.id == "dawn-waker-eluviana" and #route.steps == 5 and not route.ongoing then
