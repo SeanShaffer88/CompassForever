@@ -54,6 +54,21 @@ local function waypointText(waypoint, reveal, bearingAvailable)
     return ("%s (%s)"):format(zone, coordinates)
 end
 
+local function canShowMapCommand(waypoint, reveal)
+    return waypoint ~= nil and (reveal == "coordinates" or reveal == "full")
+end
+
+local function mapCommandText(waypoint)
+    local x = math.floor(waypoint.x * 10000 + 0.5)
+    local y = math.floor(waypoint.y * 10000 + 0.5)
+    local slash = SLASH_MAPPIN1
+    if (issecretvalue and issecretvalue(slash)) or type(slash) ~= "string" or not slash:match("^/[^%s%c/|]+$") then
+        slash = "/mappin"
+    end
+    return ("%s %d %d.%02d %d.%02d"):format(slash, waypoint.mapID,
+        math.floor(x / 100), x % 100, math.floor(y / 100), y % 100)
+end
+
 local function makePanel(api)
     local panel = CreateFrame("Frame", panelName, UIParent)
     panel:SetSize(424, 401)
@@ -177,9 +192,53 @@ local function makePanel(api)
         controls.jumpGo:SetEnabled(false)
     end
     jumpInput:SetScript("OnEscapePressed", panel.resetJump)
+
+    local mapInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    mapInput:SetSize(172, 24)
+    mapInput:SetPoint("BOTTOMLEFT", 150, 10)
+    mapInput:SetAutoFocus(false)
+    controls.mapCommandInput = mapInput
+    local copyHint = label(panel, "GameFontHighlightSmall", 327, 0, 80, 15)
+    copyHint:ClearAllPoints()
+    copyHint:SetPoint("BOTTOMLEFT", 327, 13)
+    copyHint:SetText("Ctrl+C to copy")
+
+    local selectedCommand
+    panel.resetMapCommand = function()
+        selectedCommand = nil
+        mapInput:ClearFocus()
+        mapInput:SetText("")
+        mapInput:Hide()
+        copyHint:Hide()
+    end
+    mapInput:SetScript("OnTextChanged", function(self)
+        if selectedCommand and self:GetText() ~= selectedCommand then
+            self:SetText(selectedCommand)
+            self:HighlightText()
+        end
+    end)
+    mapInput:SetScript("OnEscapePressed", panel.resetMapCommand)
+    mapInput:SetScript("OnEnterPressed", panel.resetMapCommand)
+    controls.mapCommand = button(panel, "Map Command", 120, 18, 0, function()
+        local _, waypoint = api.getCurrentStep()
+        if panel:IsShown() and canShowMapCommand(waypoint, api.getReveal()) then
+            jumpInput:ClearFocus()
+            selectedCommand = mapCommandText(waypoint)
+            mapInput:SetText(selectedCommand)
+            mapInput:Show()
+            copyHint:Show()
+            mapInput:SetFocus()
+            mapInput:HighlightText()
+        end
+    end)
+    controls.mapCommand:ClearAllPoints()
+    controls.mapCommand:SetPoint("BOTTOMLEFT", 18, 10)
+    panel.resetMapCommand()
+
     panel:SetScript("OnHide", function()
         stopMoving()
         panel.resetJump()
+        panel.resetMapCommand()
     end)
 
     local function nudge(pixels)
@@ -206,7 +265,7 @@ function namespace.CreateSecretsUI(api)
             return
         end
         local route, index, locationIndex = api.getRoute()
-        local step = api.getCurrentStep()
+        local step, waypoint = api.getCurrentStep()
         local tracking = route ~= nil and step ~= nil
         local controls = panel.controls
         local reveal = api.getReveal()
@@ -277,7 +336,15 @@ function namespace.CreateSecretsUI(api)
         if jumpRoute then
             controls.jumpLabel:SetText(("Go to Step (1–%d)"):format(#route.steps))
         end
-        panel:SetHeight(jumpRoute and 435 or 401)
+        local showMapCommand = tracking and canShowMapCommand(waypoint, reveal)
+        if not showMapCommand or panel.mapCommandRoute ~= route or panel.mapCommandIndex ~= index
+            or panel.mapCommandWaypoint ~= waypoint or panel.mapCommandReveal ~= reveal then
+            panel.resetMapCommand()
+        end
+        panel.mapCommandRoute, panel.mapCommandIndex = route, index
+        panel.mapCommandWaypoint, panel.mapCommandReveal = waypoint, reveal
+        panel:SetHeight(401 + (jumpRoute and 34 or 0) + (showMapCommand and 34 or 0))
+        controls.mapCommand:SetShown(showMapCommand)
         controls.jumpLabel:SetShown(jumpRoute ~= nil)
         controls.jumpInput:SetShown(jumpRoute ~= nil)
         controls.jumpGo:SetShown(jumpRoute ~= nil)

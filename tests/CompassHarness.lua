@@ -52,6 +52,7 @@ function methods:SetText(text)
 end
 function methods:SetAutoFocus(enabled) self.autoFocus = enabled end
 function methods:SetFocus() self.focused = true end
+function methods:HighlightText() self.highlighted = true end
 function methods:ClearFocus() self.focused = false end
 function methods:GetText() return self.text end
 function methods:SetStartPoint(...) self.start = { ... } end
@@ -1056,6 +1057,36 @@ click(secrets.controls.suggested)
 assert(SecretCompassSecretDB.index == 2 and alcaz.steps[2].waypoints[1].mapID == 1436)
 click(secrets.controls.revealCoordinates)
 assert(secrets.locationText:GetText():find("43.4, 67.8", 1, true), "Moonbrook location is revealed on request")
+local mapCommand = assert(secrets.controls.mapCommand)
+local mapInput = assert(secrets.controls.mapCommandInput)
+assert(mapCommand:IsVisible() and not mapInput:IsVisible() and not mapInput.focused,
+    "Coordinates expose the action without auto-focusing or showing text")
+local pinBeforeCommand = waypoint
+click(mapCommand)
+assert(mapInput:IsVisible() and mapInput.focused and mapInput.highlighted
+    and mapInput:GetText() == "/mappin 1436 43.40 67.80" and waypoint == pinBeforeCommand,
+    "Map command selects two-decimal text and preserves the map pin")
+mapInput:SetText("edited")
+assert(mapInput:GetText() == "/mappin 1436 43.40 67.80", "The command field retains its generated text")
+SLASH_MAPPIN1 = "/marcar"
+click(mapCommand)
+assert(mapInput:GetText() == "/marcar 1436 43.40 67.80", "The game-provided command alias is honored")
+SLASH_MAPPIN1 = "/marcar other"
+click(mapCommand)
+assert(mapInput:GetText() == "/mappin 1436 43.40 67.80", "Unexpected aliases use the known fallback")
+SLASH_MAPPIN1 = nil
+click(secrets.controls.revealDistance)
+assert(not mapCommand:IsVisible() and not mapInput:IsVisible() and not mapInput.focused
+    and mapInput:GetText() == "", "A spoiler downgrade removes the command")
+click(secrets.controls.revealCoordinates)
+click(mapCommand)
+mapInput.scripts.OnEscapePressed(mapInput)
+assert(not mapInput:IsVisible() and not mapInput.focused and mapInput:GetText() == "",
+    "Escape dismisses the selectable command")
+click(mapCommand)
+secrets.scripts.OnHide(secrets)
+assert(not mapInput:IsVisible() and not mapInput.focused and mapInput:GetText() == "",
+    "Closing the panel clears command text and focus")
 click(secrets.controls.next)
 assert(alcaz.steps[3].waypoints[1].mapID == 1434 and alcaz.steps[3].waypoints[1].y == 0.758)
 assert(alcaz.steps[3].completionQuestID == nil, "Unconfirmed Horde quest flag remains manual")
@@ -1063,6 +1094,7 @@ click(secrets.controls.revealFull)
 assert(secrets.note:GetText():find("Rix Xizzix", 1, true))
 click(secrets.controls.next)
 assert(#alcaz.steps[4].waypoints == 0 and not marker:IsVisible(), "Final assembly has no compass target")
+assert(not mapCommand:IsVisible() and not mapInput:IsVisible(), "Text-only steps have no map command")
 slash("next")
 assert(SecretCompassSecretDB.route == nil and alcazButton:IsVisible()
     and alcazButton:GetText():find("Track", 1, true), "Finished routes are offered as a fresh run")
@@ -1133,7 +1165,14 @@ click(secrets.controls.next)
 advance()
 assert(secrets.controls.location:IsVisible() and not marker:IsVisible(),
     "Cross-continent step keeps instructions without an invalid compass bearing")
+click(mapCommand)
+assert(mapInput:GetText() == "/mappin 4 10.00 20.00")
 click(secrets.controls.location)
+assert(not mapInput:IsVisible() and not mapInput.focused and mapInput:GetText() == "",
+    "Cycling a location clears the previous command")
+click(mapCommand)
+assert(mapInput:GetText() == "/mappin 1 25.00 50.00" and waypoint == savedPin,
+    "Command follows the newly selected waypoint")
 advance()
 assert(marker:IsVisible() and SecretCompassSecretDB.locationIndex == 2)
 click(secrets.controls.stop)
