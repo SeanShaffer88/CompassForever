@@ -17,7 +17,7 @@ local secretBearing, secretDistance
 local secretReveal, secretZone, secretBearingAvailable
 local directions = { [0] = "N", [90] = "E", [180] = "S", [270] = "W" }
 
-local frame = CreateFrame("Frame", "SecretCompassFrame", UIParent)
+local frame = CreateFrame("Frame", "SecretsCompassFrame", UIParent)
 frame:SetSize(halfWidth * 2, 280)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 88)
 frame:Hide()
@@ -26,7 +26,7 @@ local function hudScale()
     return frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
 end
 
-local headingLayer = CreateFrame("Frame", "SecretCompassHeading", frame)
+local headingLayer = CreateFrame("Frame", "SecretsCompassHeading", frame)
 headingLayer:SetAllPoints(frame)
 headingLayer:Hide()
 
@@ -57,7 +57,7 @@ for index = 1, 40 do
     arc[index] = { line = segment, alpha = alpha, fromX = fromX, toX = toX }
 end
 
-local detailLayer = CreateFrame("Frame", "SecretCompassStyleDetails", frame)
+local detailLayer = CreateFrame("Frame", "SecretsCompassStyleDetails", frame)
 detailLayer:SetAllPoints(frame)
 local details = {}
 local function positionStyleDetails()
@@ -150,12 +150,12 @@ local function getHeading()
     end
 end
 
-local waypoint = CreateFrame("Frame", "SecretCompassWaypoint", frame)
+local waypoint = CreateFrame("Frame", "SecretsCompassWaypoint", frame)
 waypoint:SetSize(1, 1)
 waypoint:Hide()
 local distanceLabel = waypoint:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 distanceLabel:SetTextColor(unpack(activeStyle.arc))
-local huntClue = frame:CreateFontString("SecretCompassHuntClue", "OVERLAY", "GameFontHighlightSmall")
+local huntClue = frame:CreateFontString("SecretsCompassHuntClue", "OVERLAY", "GameFontHighlightSmall")
 huntClue:SetPoint("TOP", frame, "CENTER", 0, -78)
 huntClue:SetSize(385, 54)
 huntClue:SetJustifyH("CENTER")
@@ -296,7 +296,7 @@ local function getQuestMarker(index)
     if questMarkers[index] then
         return questMarkers[index]
     end
-    local marker = CreateFrame("Frame", "SecretCompassQuest" .. index, frame)
+    local marker = CreateFrame("Frame", "SecretsCompassQuest" .. index, frame)
     marker:SetSize(1, 1)
     marker:Hide()
     local label = marker:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -774,11 +774,11 @@ local function refresh()
 end
 
 local moving, moveMode
-local lockButton = CreateFrame("Button", "SecretCompassLockButton", UIParent, "UIPanelButtonTemplate")
+local lockButton = CreateFrame("Button", "SecretsCompassLockButton", UIParent, "UIPanelButtonTemplate")
 lockButton:SetSize(146, 24)
 lockButton:SetFrameStrata("DIALOG")
 lockButton:SetClampedToScreen(true)
-lockButton:SetText("Lock SecretCompass")
+lockButton:SetText("Lock SecretsCompass")
 lockButton:Hide()
 
 local function place()
@@ -795,7 +795,7 @@ moveGuide:SetPoint("BOTTOM", frame, "CENTER", 0, 48)
 moveGuide:SetText("Drag to Move")
 moveGuide:Hide()
 
-local testLabel = frame:CreateFontString("SecretCompassTestLabel", "OVERLAY", "GameFontNormal")
+local testLabel = frame:CreateFontString("SecretsCompassTestLabel", "OVERLAY", "GameFontNormal")
 testLabel:SetPoint("CENTER", frame, "CENTER", 0, 51)
 testLabel:SetText("Test Mode")
 testLabel:Hide()
@@ -911,7 +911,7 @@ local function handleTestCommand(argument)
         if count and count >= 1 and count <= 128 then
             setTestCount(count)
         else
-            print("SecretCompass: use /secretcompass test, /secretcompass test 1–128, or /secretcompass test off")
+            print("SecretsCompass: use /secretscompass test, /secretscompass test 1–128, or /secretscompass test off")
         end
     end
 end
@@ -1015,10 +1015,10 @@ local function setPreference(key, value)
     refreshSettingsUI()
 end
 
-BINDING_HEADER_SECRETCOMPASS = "SecretCompass"
+BINDING_HEADER_SECRETSCOMPASS = "SecretsCompass"
 BINDING_NAME_SECRETCOMPASS_NEXT_STEP = "Next Secret Step"
 
-function SecretCompassNextStep()
+function SecretsCompassNextStep()
     if not secretTracker then
         return
     end
@@ -1080,7 +1080,7 @@ local function initSecrets()
         canStart = function() return standaloneRoute() ~= nil end,
         start = function() secretTracker:Track(standaloneRoute()) end,
         step = function(delta) secretTracker:Step(delta) end,
-        next = SecretCompassNextStep,
+        next = SecretsCompassNextStep,
         stop = function() secretTracker:Stop() end,
         cycle = function() secretTracker:CycleLocation() end,
     })
@@ -1096,9 +1096,10 @@ local function initSecrets()
     end
 end
 
-SLASH_SECRETCOMPASS1 = "/secretcompass"
-SLASH_SECRETCOMPASS2 = "/fcompass"
-SlashCmdList.SECRETCOMPASS = function(message)
+SLASH_SECRETSCOMPASS1 = "/secretscompass"
+SLASH_SECRETSCOMPASS2 = "/secretcompass"
+SLASH_SECRETSCOMPASS3 = "/fcompass"
+SlashCmdList.SECRETSCOMPASS = function(message)
     if not settings then
         return
     end
@@ -1114,11 +1115,11 @@ SlashCmdList.SECRETCOMPASS = function(message)
     elseif command == "secrets" and secretsUI then
         secretsUI:Toggle()
     elseif command == "next" then
-        SecretCompassNextStep()
+        SecretsCompassNextStep()
     elseif command == "test" or command:match("^test%s") then
         handleTestCommand(command:match("^test%s*(.*)$"))
     else
-        print("SecretCompass: /secretcompass toggle, /secretcompass move, /secretcompass reset, /secretcompass test, /secretcompass settings, /secretcompass secrets, /secretcompass next")
+        print("SecretsCompass: /secretscompass toggle, /secretscompass move, /secretscompass reset, /secretscompass test, /secretscompass settings, /secretscompass secrets, /secretscompass next")
     end
 end
 

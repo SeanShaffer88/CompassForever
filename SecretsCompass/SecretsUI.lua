@@ -1,6 +1,6 @@
 local _, namespace = ...
 
-local panelName = "SecretCompassSecrets"
+local panelName = "SecretsCompassSecrets"
 
 local function label(parent, font, x, y, width, height)
     local text = parent:CreateFontString(nil, "OVERLAY", font)
@@ -94,7 +94,7 @@ local function makePanel(api)
     end
     drag:SetScript("OnDragStop", stopMoving)
     panel:SetScript("OnHide", stopMoving)
-    label(drag, "GameFontNormalLarge", 18, -11, 350, 22):SetText("SecretCompass Secrets")
+    label(drag, "GameFontNormalLarge", 18, -11, 350, 22):SetText("SecretsCompass Secrets")
     panel.dragHandle = drag
 
     panel.routeTitle = label(panel, "GameFontNormalLarge", 18, -51, 390, 34)

@@ -163,7 +163,7 @@ function ns.AttachSecretChecklist(track)
             return
         end
 
-        local button = CreateFrame("Button", "SecretCompassSecretChecklistTrackButton", parent, "UIPanelButtonTemplate")
+        local button = CreateFrame("Button", "SecretsCompassSecretChecklistTrackButton", parent, "UIPanelButtonTemplate")
         button:SetSize(112, 22)
         button:SetPoint("RIGHT", link, "LEFT", -6, 0)
         button:SetText("Track Secret")
@@ -174,7 +174,7 @@ function ns.AttachSecretChecklist(track)
                 return
             end
             if DEFAULT_CHAT_FRAME then
-                DEFAULT_CHAT_FRAME:AddMessage("SecretCompass: select a supported SecretChecklist guide.")
+                DEFAULT_CHAT_FRAME:AddMessage("SecretsCompass: select a supported SecretChecklist guide.")
             end
         end)
 

@@ -174,15 +174,15 @@ C_Map = {
 playerSamples = 0
 facing = 0
 local namespace = {}
-assert(loadfile(addonPath .. "/Styles.lua"))("SecretCompass", namespace)
-assert(loadfile(addonPath .. "/Settings.lua"))("SecretCompass", namespace)
-assert(loadfile(addonPath .. "/Secrets.lua"))("SecretCompass", namespace)
-assert(loadfile(addonPath .. "/SecretsUI.lua"))("SecretCompass", namespace)
-assert(loadfile(addonPath .. "/SecretChecklistBridge.lua"))("SecretCompass", namespace)
-assert(loadfile(addonPath .. "/SecretCompass.lua"))("SecretCompass", namespace)
-local frame = assert(SecretCompassFrame)
-local heading = assert(SecretCompassHeading)
-local marker = assert(SecretCompassWaypoint)
+assert(loadfile(addonPath .. "/Styles.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/Settings.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/Secrets.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/SecretsUI.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/SecretChecklistBridge.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/SecretsCompass.lua"))("SecretsCompass", namespace)
+local frame = assert(SecretsCompassFrame)
+local heading = assert(SecretsCompassHeading)
+local marker = assert(SecretsCompassWaypoint)
 assert(#frame.lines == 40 and #heading.lines == 24 and #heading.labels == 4, "Preallocated arc and heading regions")
 local firstSegment, lastSegment = frame.lines[1], frame.lines[#frame.lines]
 assert(firstSegment.start[3] < 0 and lastSegment.finish[3] > 0, "Arc spans both sides")
@@ -218,7 +218,7 @@ local function pin(x, y)
 end
 
 ForeverCompassDB = { x = 0, y = 88, theme = "unknown", style = "bogus", opacity = "mistyped" }
-event("ADDON_LOADED", "SecretCompass")
+event("ADDON_LOADED", "SecretsCompass")
 event("PLAYER_ENTERING_WORLD")
 advance()
 assert(frame:IsVisible() and heading:IsVisible() and not marker:IsVisible(), "Default state")
@@ -292,8 +292,9 @@ assert(not marker:IsVisible(), "Cleared map pin hidden")
 local samplesWithoutPin = playerSamples
 advance()
 assert(playerSamples == samplesWithoutPin, "No player map samples without a pin")
-assert(SLASH_SECRETCOMPASS1 == "/secretcompass")
-local slash = assert(SlashCmdList.SECRETCOMPASS)
+assert(SLASH_SECRETSCOMPASS1 == "/secretscompass" and SLASH_SECRETSCOMPASS2 == "/secretcompass"
+    and SLASH_SECRETSCOMPASS3 == "/fcompass", "The renamed addon preserves its old slash aliases")
+local slash = assert(SlashCmdList.SECRETSCOMPASS)
 slash("toggle")
 assert(not frame:IsVisible() and not frame.scripts.OnUpdate and ForeverCompassDB.enabled == false, "Hidden display stops updates and persists")
 slash("toggle")
@@ -312,7 +313,7 @@ assert(ForeverCompassDB.x == 0 and ForeverCompassDB.y == 88, "Reset restores def
 assert(frame:IsVisible(), "Reset keeps visible compass")
 
 local function questMarker(slot)
-    return assert(_G["SecretCompassQuest" .. slot])
+    return assert(_G["SecretsCompassQuest" .. slot])
 end
 local function questText(slot, expected)
     local quest = questMarker(slot)
@@ -443,7 +444,7 @@ for slot = 1, 8 do
 end
 questText(7, "! 803 yd")
 questText(8, "! 854 yd")
-assert(not SecretCompassQuest9 or not SecretCompassQuest9:IsVisible(), "Unwatched super-tracked quest is excluded")
+assert(not SecretsCompassQuest9 or not SecretsCompassQuest9:IsVisible(), "Unwatched super-tracked quest is excluded")
 assert(marker:IsVisible() and marker.labels[1].text == "300 yd", "Manual pin stays independent")
 local function labelBounds(quest)
     local label = quest.labels[1]
@@ -621,7 +622,7 @@ frame.centerX, frame.centerY = 340, 140
 UIParent:SetSize(640, 360)
 UIParent.centerX, UIParent.centerY = 320, 180
 
-local testLabel = assert(SecretCompassTestLabel)
+local testLabel = assert(SecretsCompassTestLabel)
 assert(not testLabel:IsShown(), "Test mode starts off")
 slash("test")
 assert(testLabel:IsVisible(), "Test mode identified")
@@ -732,10 +733,10 @@ end
 
 assert(ForeverCompassDB.theme == nil and ForeverCompassDB.style == "arc"
     and ForeverCompassDB.opacity == 1, "Old settings are normalized with Classic defaults")
-local minimapButton = assert(SecretCompassMinimapButton)
+local minimapButton = assert(SecretsCompassMinimapButton)
 local icon = assert(minimapButton.icon)
 assert(icon:IsShown() and icon:GetWidth() == 28 and icon:GetHeight() == 28
-    and icon.texture == "Interface\\AddOns\\SecretCompass\\Media\\MinimapCompass.tga",
+    and icon.texture == "Interface\\AddOns\\SecretsCompass\\Media\\MinimapCompass.tga",
     "Minimap button displays the bundled compass artwork")
 local iconFile = assert(io.open(addonPath .. "/Media/MinimapCompass.tga", "rb"))
 local pixels = iconFile:read("*a")
@@ -746,7 +747,7 @@ assert(minimapButton.parent == Minimap and minimapButton:IsVisible(), "Minimap b
 click(minimapButton)
 assert(not frame:IsVisible() and minimapButton:IsVisible(), "Left click hides only the HUD")
 click(minimapButton, "RightButton")
-local panel = assert(SecretCompassSettings)
+local panel = assert(SecretsCompassSettings)
 local controls = assert(panel.controls)
 assert(panel:IsVisible() and not frame:IsVisible(), "Right click opens settings while HUD is off")
 assert(panel.dragHandle.scripts.OnDragStart and panel.dragHandle.scripts.OnDragStop, "Title bar is draggable")
@@ -778,7 +779,7 @@ assert(styleCount == #expectedStyles and #namespace.CompassStyles == #expectedSt
 for _, id in ipairs(expectedStyles) do
     click(assert(controls.styles[id]))
     assert(ForeverCompassDB.style == id, "Style selection persists")
-    local hud = shapeSignature(frame.lines, SecretCompassStyleDetails.lines)
+    local hud = shapeSignature(frame.lines, SecretsCompassStyleDetails.lines)
     local preview = shapeSignature(panel.preview.arc, panel.preview.details)
     assert(not hudShapes[hud] and not previewShapes[preview], "Each style has distinct geometry in both renderers: " .. id)
     hudShapes[hud], previewShapes[preview] = true, true
@@ -793,7 +794,7 @@ assert(frame.lines[1].start[4] == frame.lines[20].finish[4], "Framed style has a
 click(controls.styles.tactical)
 assert(frame.lines[20].finish[4] < frame.lines[1].start[4], "Tactical has a center notch")
 click(controls.styles.flight)
-assert(not frame.lines[20]:IsShown() and SecretCompassStyleDetails.lines[1]:IsShown(),
+assert(not frame.lines[20]:IsShown() and SecretsCompassStyleDetails.lines[1]:IsShown(),
     "Flight breaks the center line for its chevron")
 click(controls.styles.arc)
 assert(frame.lines[1].start[4] < frame.lines[20].finish[4], "Arc style restores curvature")
@@ -854,7 +855,7 @@ click(controls.showMinimap)
 assert(minimapButton:IsVisible())
 
 local size = assert(controls.size)
-local lockButton = assert(SecretCompassLockButton)
+local lockButton = assert(SecretsCompassLockButton)
 assert(ForeverCompassDB.scale == 1 and controls.sizeValue:GetText() == "100%"
     and size.minimum == 60 and size.maximum == 150 and size.step == 5,
     "Existing settings default to the original HUD size")
@@ -874,8 +875,8 @@ assert(math.abs(x * 1.5 - 640) < 0.01 and math.abs(y * 1.5 - 448) < 0.01,
 for index = 1, 20 do click(controls.transparencyUp) end
 click(controls.move)
 assert(not panel:IsVisible() and lockButton:IsVisible() and lockButton.parent == UIParent
-    and lockButton:GetText() == "Lock SecretCompass" and frame.mouseEnabled,
-    "Move HUD opens the independent Lock SecretCompass button")
+    and lockButton:GetText() == "Lock SecretsCompass" and frame.mouseEnabled,
+    "Move HUD opens the independent Lock SecretsCompass button")
 assert(frame.alpha == 1 and ForeverCompassDB.opacity == 0, "The transparent HUD is visible for placement")
 frame.scripts.OnDragStart()
 frame.centerX, frame.centerY = 750 / 1.5, 285 / 1.5
@@ -924,9 +925,9 @@ local completionFlags, acceptedQuests = {}, {}
 C_QuestLog.IsQuestFlaggedCompleted = function(id) return completionFlags[id] end
 C_QuestLog.IsOnQuest = function(id) return acceptedQuests[id] end
 fireAddonEvent("PLAYER_LOGIN")
-assert(not SecretCompassSecretChecklistTrackButton, "Standalone mode has no foreign-addon button")
+assert(not SecretsCompassSecretChecklistTrackButton, "Standalone mode has no foreign-addon button")
 slash("secrets")
-local secrets = assert(SecretCompassSecrets)
+local secrets = assert(SecretsCompassSecrets)
 assert(secrets:IsVisible() and secrets.controls.start:IsVisible())
 acceptedQuests[79007] = true
 click(secrets.controls.start)
@@ -941,7 +942,7 @@ assert(marker:IsVisible() and marker.labels[1]:GetText():find("Secret", 1, true)
 assert(secrets.note:GetText() == "" and not secrets.locationText:GetText():find("%d+%.%d+"),
     "Clue mode hides instructions and precise coordinates")
 assert(marker.lines[1].start[4] == 6, "Clue mode uses a fixed-size marker")
-local hunt = assert(SecretCompassHuntClue)
+local hunt = assert(SecretsCompassHuntClue)
 assert(hunt:IsVisible() and hunt:GetText():find("1/7", 1, true), "Compact HUD shows active step")
 click(secrets.controls.close)
 assert(not secrets:IsVisible() and hunt:IsVisible(), "Compact HUD works with both guide windows closed")
@@ -979,8 +980,8 @@ assert(namespace.StandaloneSecrets()[1].steps[1].waypoints[1].mapID == 1436, "Al
 faction = nil
 assert(#namespace.StandaloneSecrets() == 0, "The standalone route waits for an eligible faction")
 faction = "Horde"
-assert(BINDING_NAME_SECRETCOMPASS_NEXT_STEP == "Next Secret Step")
-SecretCompassNextStep()
+assert(BINDING_HEADER_SECRETSCOMPASS == "SecretsCompass" and BINDING_NAME_SECRETCOMPASS_NEXT_STEP == "Next Secret Step")
+SecretsCompassNextStep()
 assert(secrets.progress:GetText():match("^Step 2") and SecretCompassSecretDB.index == 2)
 local resumed = namespace.CreateSecretTracker(SecretCompassSecretDB, function() end)
 local _, resumedIndex = resumed:GetRoute()
@@ -1018,12 +1019,12 @@ local foreignEntry = {
 }
 SecretChecklist = { entries = { foreignEntry }, guidesPanel = foreignPanel, guidesLinkBtn = true }
 fireAddonEvent("ADDON_LOADED", "SecretChecklist")
-assert(not SecretCompassSecretChecklistTrackButton, "An unsupported host layout is ignored")
+assert(not SecretsCompassSecretChecklistTrackButton, "An unsupported host layout is ignored")
 SecretChecklist.guidesLinkBtn = foreignLink
 fireAddonEvent("ADDON_LOADED", "SecretChecklist")
-local trackSecret = assert(SecretCompassSecretChecklistTrackButton, "Late host load adds the companion button")
+local trackSecret = assert(SecretsCompassSecretChecklistTrackButton, "Late host load adds the companion button")
 fireAddonEvent("PLAYER_LOGIN")
-assert(SecretCompassSecretChecklistTrackButton == trackSecret and trackSecret:GetParent() == foreignDetailPane
+assert(SecretsCompassSecretChecklistTrackButton == trackSecret and trackSecret:GetParent() == foreignDetailPane
     and trackSecret:GetText() == "Track Secret")
 assert(foreignLink:GetScript("OnClick") == hostClick, "Companion keeps the host click action intact")
 waypoint = { uiMapID = 2, position = { x = 300, y = 0 } }
@@ -1117,4 +1118,4 @@ assert(beforeSuggestion == 1, "Checking progress never advances")
 assert(loadedTracker:Jump(3) and not loadedTracker:Jump(8))
 assert(loadedTracker:Step(-1), "The suggested step can be manually overridden")
 
-print("SecretCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, spoiler levels, verified progress, and the SecretChecklist companion")
+print("SecretsCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, spoiler levels, verified progress, and the SecretChecklist companion")
