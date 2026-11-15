@@ -98,6 +98,7 @@ function ns.NormalizeSecretRoute(route)
         return {
             id = id, title = title, steps = steps, sourceURL = safeURL(route.sourceURL),
             ongoing = ongoing, legacyResumeStep = legacyResumeStep,
+            category = safeText(route.category, 32),
         }
     end
 end
@@ -449,6 +450,7 @@ local function alcazRoute(faction)
         or "Take the Document Box to Rix Xizzix near the auction house in Booty Bay. Complete State Secrets for one Fractured Insignia."
     return ns.NormalizeSecretRoute({
         id = "alcaz-operative-insignia:" .. faction,
+        category = "collectibles",
         title = "Alcaz Operative Insignia",
         sourceURL = "https://www.wowhead.com/forever/guide/alcaz-operative-disguise-toy-secret-walkthrough",
         steps = {
@@ -481,6 +483,7 @@ end
 local function scarletBannerRoute()
     return ns.NormalizeSecretRoute({
         id = "scarlet-banner",
+        category = "collectibles",
         title = "Scarlet Banner",
         sourceURL = "https://www.wowhead.com/forever/guide/collections/scarlet-banner-puzzle-locations",
         steps = {
@@ -514,6 +517,7 @@ end
 local function musicalGustjumperRoute()
     return ns.NormalizeSecretRoute({
         id = "musical-gustjumper",
+        category = "pets",
         title = "Musical Gustjumper",
         sourceURL = "https://www.wowhead.com/forever/item=268109/musical-gustjumper",
         steps = {
@@ -529,6 +533,7 @@ end
 local function nightWatchmansTorchRoute()
     return ns.NormalizeSecretRoute({
         id = "night-watchmans-torch",
+        category = "collectibles",
         title = "Night Watchman's Torch",
         sourceURL = "https://warcraft-secrets.com/guides/night-watchmans-torch",
         steps = {
@@ -557,6 +562,7 @@ end
 local function lynTheIgnoredRoute()
     return ns.NormalizeSecretRoute({
         id = "lyn-the-ignored",
+        category = "mysteries",
         title = "Lyn the Ignored",
         sourceURL = "https://www.wowhead.com/forever/news/how-to-find-the-secret-boss-in-the-city-of-dalaran-dungeon-in-wow-forever-383366",
         steps = {
@@ -588,6 +594,7 @@ local function dawnWakerRoute(faction)
     local ealaane = { mapID = 2521, x = 0.6594, y = 0.7437, label = "Ealaane Nimbuswalker" }
     local route = {
         id = "dawn-waker-eluviana",
+        category = "mysteries",
         title = "Dawn Waker (Known Steps)",
         sourceURL = "https://www.wowhead.com/forever/guide/dawn-waker-secret-walkthrough",
         ongoing = true,
@@ -756,6 +763,7 @@ end
 local function manualScavengerHuntRoute()
     return ns.NormalizeSecretRoute({
         id = "manual-scavenger-hunt",
+        category = "mysteries",
         title = "Manual Scavenger Hunt",
         sourceURL = "https://www.wowhead.com/forever/news/the-secret-finding-discord-is-sleuthing-again-in-wow-forever-383414",
         ongoing = true,
@@ -849,6 +857,7 @@ end
 local function excitableSlimeRoute()
     return ns.NormalizeSecretRoute({
         id = "excitable-slime",
+        category = "pets",
         title = "Excitable Slime",
         sourceURL = "https://warcraft-secrets.com/guides/excitable-slime",
         steps = {
@@ -876,6 +885,7 @@ end
 local function silverOfTheWavesRoute()
     return ns.NormalizeSecretRoute({
         id = "silver-of-the-waves",
+        category = "mysteries",
         title = "Silver of the Waves",
         sourceURL = "https://www.wowhead.com/forever/quest=86614/silver-of-the-waves",
         steps = {
@@ -902,6 +912,7 @@ end
 local function applejackStillRoute()
     return ns.NormalizeSecretRoute({
         id = "applejack-still",
+        category = "mysteries",
         title = "Applejack Still",
         sourceURL = "https://wowhandbook.com/news/applejack-still-elwynn-forest/",
         steps = {
@@ -927,6 +938,7 @@ end
 local function whisperingHorrorResidueRoute()
     return ns.NormalizeSecretRoute({
         id = "whispering-horror-residue",
+        category = "mysteries",
         title = "Whispering Horror Residue",
         sourceURL = "https://www.wowhead.com/forever/quest=95328/whispering-horror-residue",
         steps = {
@@ -946,6 +958,7 @@ end
 local function blessingOfKalimdorRoute()
     return ns.NormalizeSecretRoute({
         id = "blessing-of-kalimdor",
+        category = "utility",
         title = "Blessing of Kalimdor",
         sourceURL = "https://wowhandbook.com/news/blessing-of-kalimdor-set-guide/",
         steps = {
@@ -983,6 +996,7 @@ end
 local function travelersSymbolsRoute()
     return ns.NormalizeSecretRoute({
         id = "travelers-symbols",
+        category = "collectibles",
         title = "Traveler's Symbols",
         sourceURL = "https://www.wowhead.com/forever/guide/travelers-symbols-toy-secret-walkthrough",
         steps = {
@@ -1010,6 +1024,7 @@ local function bloodyMapRoute()
     local agent = { mapID = 1437, x = 0.5153, y = 0.5935, label = "Deathstalker Agent" }
     return ns.NormalizeSecretRoute({
         id = "bloody-map",
+        category = "mysteries",
         title = "The Bloody Map (Known Steps)",
         sourceURL = "https://wowhandbook.com/news/bloody-map-excavation-site-wetlands/",
         ongoing = true,
@@ -1044,6 +1059,7 @@ end
 local function savoryWhimsyfinDelightRoute()
     return ns.NormalizeSecretRoute({
         id = "savory-whimsyfin-delight",
+        category = "professions",
         title = "Savory Whimsyfin Delight",
         sourceURL = "https://wowhandbook.com/news/savory-whimsyfin-delight-recipe/",
         steps = {
@@ -1074,6 +1090,7 @@ end
 local function malignantRootRoute()
     return ns.NormalizeSecretRoute({
         id = "malignant-root",
+        category = "utility",
         title = "Malignant Root",
         sourceURL = "https://www.method.gg/wow-forever/how-to-get-malignant-root-powerful-rare-ring-in-wow-forever",
         steps = {
@@ -1102,6 +1119,7 @@ end
 local function dwarvenTradeskillSignpostRoute()
     return ns.NormalizeSecretRoute({
         id = "dwarven-tradeskill-signpost",
+        category = "professions",
         title = "Dwarven Tradeskill Signpost",
         sourceURL = "https://guided.news/en/guides/wow-forever-profession-sign-ironforge-quest-route-materials/",
         steps = {
@@ -1131,6 +1149,7 @@ local function aTasteOfHomeRoute()
     local arille = { mapID = 1416, x = 0.185, y = 0.657, label = "Arille Azuregaze" }
     return ns.NormalizeSecretRoute({
         id = "a-taste-of-home",
+        category = "collectibles",
         title = "A Taste of Home",
         sourceURL = "https://www.wowhead.com/forever/quest=96609/a-taste-of-home#comments",
         steps = {
@@ -1154,6 +1173,7 @@ end
 local function orcishTradeskillSignpostRoute()
     return ns.NormalizeSecretRoute({
         id = "orcish-tradeskill-signpost",
+        category = "professions",
         title = "Orcish Tradeskill Signpost",
         sourceURL = "https://www.wowhead.com/forever/guide/durotar-supply-and-logistics-reputation-professions",
         steps = {
@@ -1182,6 +1202,7 @@ end
 local function fizsprocketsNotesRoute()
     return ns.NormalizeSecretRoute({
         id = "fizsprockets-notes",
+        category = "mysteries",
         title = "Fizsprocket's Notes",
         sourceURL = "https://www.wowhead.com/forever/quest=98424/fizsprockets-notes#comments",
         steps = {
@@ -1215,6 +1236,7 @@ end
 local function condorHatchlingRoute()
     return ns.NormalizeSecretRoute({
         id = "condor-hatchling",
+        category = "pets",
         title = "Condor Hatchling",
         sourceURL = "https://www.wowhead.com/forever/item=282637/shaking-egg#comments",
         steps = {
@@ -1237,6 +1259,7 @@ end
 local function tallstriderHatchlingRoute()
     return ns.NormalizeSecretRoute({
         id = "tallstrider-hatchling",
+        category = "pets",
         title = "Tallstrider Hatchling",
         sourceURL = "https://www.wowhead.com/forever/npc=274334/tallstrider-hatchling#comments",
         steps = {
@@ -1258,6 +1281,7 @@ end
 local function babyCrocoliskRoute()
     return ns.NormalizeSecretRoute({
         id = "baby-crocolisk",
+        category = "pets",
         title = "Baby Crocolisk",
         sourceURL = "https://www.wowhead.com/forever/item=282047/baby-crocolisk#comments",
         steps = {
@@ -1279,6 +1303,7 @@ end
 local function bitterBaitlingRoute()
     return ns.NormalizeSecretRoute({
         id = "bitter-baitling",
+        category = "pets",
         title = "Bitter Baitling",
         sourceURL = "https://polestar.guide/guides/collectibles/pets/bitter-baitling",
         steps = {
@@ -1304,6 +1329,7 @@ local function weevilKNeevilRoute()
     local amaryllis = { mapID = 1435, x = 0.251, y = 0.542, label = "Amaryllis Webb" }
     return ns.NormalizeSecretRoute({
         id = "weevil-k-neevil",
+        category = "pets",
         title = "Weevil K. Neevil",
         sourceURL = "https://polestar.guide/guides/collectibles/pets/weevil-k-neevil",
         steps = {
@@ -1333,6 +1359,7 @@ end
 local function giftOfGallopingRoute()
     return ns.NormalizeSecretRoute({
         id = "gift-of-galloping",
+        category = "utility",
         title = "Gift of Galloping",
         sourceURL = "https://www.wowhead.com/forever/item=271871/gift-of-galloping#comments",
         steps = {
@@ -1408,6 +1435,7 @@ function ns.StandaloneSecrets()
     }
     local routes = { ns.NormalizeSecretRoute({
         id = "cozy-sleeping-bag:" .. faction,
+        category = "utility",
         title = "Cozy Sleeping Bag", sourceURL = source, steps = steps,
     }), alcazRoute(faction), scarletBannerRoute(), musicalGustjumperRoute(),
         nightWatchmansTorchRoute(), lynTheIgnoredRoute(), dawnWakerRoute(faction), manualScavengerHuntRoute() }

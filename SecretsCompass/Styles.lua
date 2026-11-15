@@ -1,5 +1,5 @@
 local _, namespace = ...
-local gold, purple = {1, 0.77, 0.32}, {0.82, 0.47, 1}
+local secretColor = {0.82, 0.47, 1}
 
 -- Baselines, gaps, and decorations use the same 560-unit canvas in the HUD and preview.
 local styles = {
@@ -86,7 +86,7 @@ local styles = {
 }
 local byID = {}
 for _, style in ipairs(styles) do
-    style.quest, style.pin = gold, purple
+    style.secret = secretColor
     style.details = style.details or {}
     byID[style.id] = style
 end

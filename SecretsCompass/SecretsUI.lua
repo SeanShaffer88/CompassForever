@@ -4,9 +4,17 @@ local panelName = "SecretsCompassSecrets"
 local journalTitle = "SecretsCompass Journal"
 local portraitPath = "Interface\\AddOns\\" .. addonName .. "\\Media\\MinimapCompass.tga"
 local journalHeight = 471
-local routeRowHeight, baseRouteRows = 30, 8
-local routePageHeight = journalHeight - (baseRouteRows - 1) * routeRowHeight
+local routeRowHeight, routeHeadingHeight = 30, 24
+local routeListTop, routeFrameHeight, routePagerHeight = 157, 231, 30
 local routePageInset = 10
+local routeCategories = {
+    pets = { order = 1, label = "Pets" },
+    collectibles = { order = 2, label = "Toys & Collectibles" },
+    utility = { order = 3, label = "Gear & Utility" },
+    professions = { order = 4, label = "Professions" },
+    mysteries = { order = 5, label = "Quests & Mysteries" },
+}
+local otherCategory = { order = 6, label = "Other Secrets" }
 local navigationMessages = {
     delegated = "Waypoint sent to the external arrow.",
     unavailable = "External arrow unavailable. Using your HUD preference.",
@@ -16,7 +24,6 @@ local navigationMessages = {
     failed = "The external arrow could not take this waypoint.",
     cleanupFailed = "The external arrow could not clear the previous waypoint.",
     cleared = "The external waypoint was cleared. Switch navigation to send it again.",
-    test = "External navigation paused during the overflow test.",
 }
 
 local function label(parent, font, x, y, width, height)
@@ -84,6 +91,71 @@ local function mapCommandText(waypoint)
     end
     return ("%s %d %d.%02d %d.%02d"):format(slash, waypoint.mapID,
         math.floor(x / 100), x % 100, math.floor(y / 100), y % 100)
+end
+
+local function routeCategory(route)
+    return routeCategories[route.category] or otherCategory
+end
+
+local function paginateRoutes(routes, screenHeight)
+    local sorted = {}
+    for i, route in ipairs(routes) do
+        sorted[i] = route
+    end
+    table.sort(sorted, function(a, b)
+        local aCategory, bCategory = routeCategory(a), routeCategory(b)
+        if aCategory ~= bCategory then
+            return aCategory.order < bCategory.order
+        end
+        local aTitle, bTitle = a.title:lower(), b.title:lower()
+        if aTitle == bTitle then
+            return a.id < b.id
+        end
+        return aTitle < bTitle
+    end)
+
+    local contentHeight, previousCategory = #sorted * routeRowHeight, nil
+    for _, route in ipairs(sorted) do
+        local category = routeCategory(route)
+        if category ~= previousCategory then
+            contentHeight = contentHeight + routeHeadingHeight
+            previousCategory = category
+        end
+    end
+
+    local naturalHeight = math.max(journalHeight, routeFrameHeight + contentHeight)
+    local availableHeight = screenHeight - routePageInset
+    local maxHeight = contentHeight
+    if #routes > 1 and screenHeight > 0 and naturalHeight > availableHeight then
+        maxHeight = math.max(routeHeadingHeight + routeRowHeight, availableHeight - routeFrameHeight - routePagerHeight)
+    end
+
+    local current = { first = 1, last = 0, height = 0, rows = {} }
+    local pages, tallest = { current }, 0
+    previousCategory = nil
+    for index, route in ipairs(sorted) do
+        local category = routeCategory(route)
+        local newHeading = category ~= previousCategory
+        local rowHeight = routeRowHeight + (newHeading and routeHeadingHeight or 0)
+        if current.height + rowHeight > maxHeight then
+            current = { first = index, last = index - 1, height = 0, rows = {} }
+            pages[#pages + 1] = current
+            newHeading = true
+        end
+        local position = routeListTop + current.height
+        if newHeading then
+            current.height = current.height + routeHeadingHeight
+        end
+        current.rows[#current.rows + 1] = {
+            route = route, heading = newHeading and category or nil, position = position,
+        }
+        current.last = index
+        current.height = current.height + routeRowHeight
+        tallest = math.max(tallest, current.height)
+        previousCategory = category
+    end
+    local height = #pages > 1 and routeFrameHeight + routePagerHeight + tallest or naturalHeight
+    return pages, height
 end
 
 local function makePanel(api, changePage)
@@ -180,7 +252,7 @@ local function makePanel(api, changePage)
     panel.status = label(body, "GameFontHighlightSmall", 18, -270, 272, 30)
     panel.status:SetTextColor(0.74, 0.77, 0.76)
 
-    local controls = { routes = {} }
+    local controls = { routes = {}, routeHeadings = {} }
     panel.controls = controls
     controls.close = panel.CloseButton
     if not controls.close then
@@ -371,7 +443,7 @@ function namespace.CreateSecretsUI(api)
             panel.routeTitle:SetText("Choose a Secret")
             panel.progress:SetText("")
             panel.stepTitle:SetText(finished and "Route finished. Choose another secret when you are ready."
-                or "Choose a built-in route, or use Track Secret in SecretChecklist.")
+                or "Use Track Secret in SecretChecklist, or choose a built-in route below.")
             panel.note:SetText("")
             controls.suggested:Hide()
             panel.suggestion:SetText("")
@@ -379,27 +451,22 @@ function namespace.CreateSecretsUI(api)
         for _, row in pairs(controls.routes) do
             row:Hide()
         end
+        for _, heading in pairs(controls.routeHeadings) do
+            heading:Hide()
+        end
         local routes = not tracking and api.getRoutes()
         local height, paging, pageCount = journalHeight, false, 1
         if routes then
             if #routes == 0 then
                 panel.note:SetText("Built-in routes need your character's Alliance or Horde faction.")
             end
-            height = journalHeight + math.max(0, #routes - baseRouteRows) * routeRowHeight
-            local pageSize = #routes
-            local screenHeight = UIParent:GetHeight()
-            local availableHeight = screenHeight - routePageInset
-            if #routes > 1 and screenHeight > 0 and height > availableHeight then
-                pageSize = math.max(1, math.floor((availableHeight - routePageHeight) / routeRowHeight))
-                pageCount = math.ceil(#routes / pageSize)
-                height = routePageHeight + pageSize * routeRowHeight
-                paging = true
-            end
+            local pages, layoutHeight = paginateRoutes(routes, UIParent:GetHeight())
+            height, pageCount = layoutHeight, #pages
+            paging = pageCount > 1
             page = math.min(page, pageCount)
-            local first = (page - 1) * pageSize + 1
-            local last = math.min(page * pageSize, #routes)
+            local visible = pages[page]
             if paging then
-                controls.routePageRange:SetText(("%d–%d of %d"):format(first, last, #routes))
+                controls.routePageRange:SetText(("%d–%d of %d"):format(visible.first, visible.last, #routes))
             end
             local finishedCount = 0
             for _, choice in ipairs(routes) do
@@ -407,10 +474,24 @@ function namespace.CreateSecretsUI(api)
                     finishedCount = finishedCount + 1
                 end
             end
-            for index = first, last do
-                local choice = routes[index]
+            for _, entry in ipairs(visible.rows) do
+                local choice = entry.route
                 local id = choice.id
-                local position = -157 - (index - first) * routeRowHeight
+                local position = -entry.position
+                local category = entry.heading
+                if category then
+                    local heading = controls.routeHeadings[category.label]
+                    if not heading then
+                        heading = label(panel.body, "GameFontNormal", 18, position, 388, 18)
+                        heading:SetText(category.label)
+                        controls.routeHeadings[category.label] = heading
+                    else
+                        heading:ClearAllPoints()
+                        heading:SetPoint("TOPLEFT", 18, position)
+                    end
+                    heading:Show()
+                    position = position - routeHeadingHeight
+                end
                 local row = controls.routes[id]
                 if not row then
                     row = button(panel.body, "", 388, 18, position, function() api.start(id) end)
