@@ -988,6 +988,9 @@ do
         ["condor-hatchling"] = { {1432, 746, 708}, {1432, 777, 749}, {1432, 747, 669} },
         ["tallstrider-hatchling"] = { {1439, 348, 873}, {1439, 350, 880} },
         ["baby-crocolisk"] = { {1453, 712, 488}, {1453, 711, 680} },
+        ["bitter-baitling"] = { {1434, 274, 769}, {1434, 267, 763} },
+        ["weevil-k-neevil"] = { {1435, 251, 542}, {1434, 431, 167}, {1417, 310, 263}, {1443, 481, 571} },
+        ["gift-of-galloping"] = { {2548, 783, 520} },
         ["manual-scavenger-hunt"] = {
             {1417, 226.9, 241.7}, {1424, 876.1, 479.1}, {1458, 228.6, 361.9},
             {2548, 265.6, 455.8}, {2548, 267.2, 477.4}, {1419, 451.9, 164.7},
@@ -1000,12 +1003,20 @@ do
         slash("secrets")
         local choices = namespace.StandaloneSecrets()
         local isAlliance = side == "Alliance"
-        local expectedCount = isAlliance and 19 or 18
+        local expectedCount = isAlliance and 22 or 21
         assert(#choices == expectedCount
             and secrets.progress:GetText() == ("0 of %d Built-In Routes Finished"):format(expectedCount),
             "Faction-specific additions update the journal count")
         assert(choices[17].id == "condor-hatchling" and choices[18].id == "tallstrider-hatchling"
-            and (not isAlliance or choices[19].id == "baby-crocolisk"), "Pet routes follow all existing guides")
+            and (not isAlliance or choices[19].id == "baby-crocolisk"), "The existing pet routes keep their slots")
+        local bitter, weevil, gift = choices[expectedCount - 2], choices[expectedCount - 1], choices[expectedCount]
+        assert(bitter.id == "bitter-baitling" and #bitter.steps == 3 and #bitter.steps[1].waypoints == 0
+            and weevil.id == "weevil-k-neevil" and #weevil.steps == 5
+            and gift.id == "gift-of-galloping" and #gift.steps == 1,
+            "Both factions get all three new routes after the existing catalog")
+        local weevilStart, weevilEnd = weevil.steps[1].waypoints[1], weevil.steps[5].waypoints[1]
+        assert(weevilStart.mapID == weevilEnd.mapID and weevilStart.x == weevilEnd.x and weevilStart.y == weevilEnd.y,
+            "The specimen route returns to Amaryllis Webb")
         assert(choices[11].id == "blessing-of-kalimdor" and choices[12].id == "travelers-symbols",
             "Both factions keep their existing Barrens and Blackrock routes")
         local symbols = choices[12]
@@ -1054,7 +1065,7 @@ do
         end
         local lastRow = secrets.controls.routes[choices[expectedCount].id]
         local _, _, rowY = lastRow:GetPoint()
-        assert(secrets:GetHeight() == (isAlliance and 801 or 771)
+        assert(secrets:GetHeight() == (isAlliance and 891 or 861)
             and not secrets.controls.routePageNext:IsVisible()
             and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
             "The last route row fits above navigation")
@@ -1308,7 +1319,7 @@ do
     local controls = secrets.controls
     local previousPage, nextPage, range = controls.routePagePrevious, controls.routePageNext, controls.routePageRange
     local choices = namespace.StandaloneSecrets()
-    local lateRoute = choices[18]
+    local lateRoute = choices[#choices]
     local function assertPage(first, last, height)
         assert(secrets:GetHeight() == height and previousPage:IsVisible() and nextPage:IsVisible() and range:IsVisible(),
             "Only an overflowing catalog shows the pager")
@@ -1331,11 +1342,11 @@ do
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     assertPage(1, 14, 681)
-    assert(secrets.progress:GetText() == "1 of 18 Built-In Routes Finished",
+    assert(secrets.progress:GetText() == "1 of 21 Built-In Routes Finished",
         "Completion includes finished routes off the current page")
     SecretCompassSecretDB.finishedRoutes[lateRoute.id] = nil
     click(nextPage)
-    assertPage(15, 18, 681)
+    assertPage(15, 21, 681)
     local condor = controls.routes["condor-hatchling"]
     click(condor)
     assert(secrets.routeTitle:GetText() == "Condor Hatchling" and not range:IsVisible()
@@ -1347,7 +1358,22 @@ do
     assert(controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90",
         "Next Location reaches an alternate Lord Condar search area")
     click(controls.stop)
-    assertPage(15, 18, 681)
+    assertPage(15, 21, 681)
+
+    click(controls.routes["bitter-baitling"])
+    click(controls.revealCoordinates)
+    assert(secrets.progress:GetText():match("^Step 1") and not controls.mapCommand:IsVisible(),
+        "The contest fishing step gives instructions without a fixed waypoint")
+    click(controls.next)
+    click(controls.mapCommand)
+    assert(controls.mapCommandInput:GetText() == "/mappin 1434 27.40 76.90",
+        "Next leads to Riggle Bassbait for the contest turn-in")
+    click(controls.next)
+    click(controls.mapCommand)
+    assert(controls.mapCommandInput:GetText() == "/mappin 1434 26.70 76.30",
+        "The final step leads to Jang for the prize exchange")
+    click(controls.stop)
+    assertPage(15, 21, 681)
     click(previousPage)
     assertPage(1, 14, 681)
 
@@ -1361,16 +1387,16 @@ do
     click(nextPage)
     assertPage(13, 18, 441)
     click(nextPage)
-    assertPage(19, 19, 441)
+    assertPage(19, 22, 441)
     faction = "Horde"
     choices = namespace.StandaloneSecrets()
     slash("secrets")
     slash("secrets")
-    assertPage(13, 18, 441)
+    assertPage(19, 21, 441)
     assert(not controls.routes["baby-crocolisk"]:IsVisible(), "The Alliance route stays hidden on the Horde page")
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(15, 18, 681)
+    assertPage(15, 21, 681)
     UIParent:SetHeight(1080)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     assert(not range:IsVisible() and cozyButton:IsVisible() and controls.routes[lateRoute.id]:IsVisible(),

@@ -1276,6 +1276,77 @@ local function babyCrocoliskRoute()
     })
 end
 
+local function bitterBaitlingRoute()
+    return ns.NormalizeSecretRoute({
+        id = "bitter-baitling",
+        title = "Bitter Baitling",
+        sourceURL = "https://polestar.guide/guides/collectibles/pets/bitter-baitling",
+        steps = {
+            routeStep("Catch Speckled Tastyfish",
+                "During the Stranglethorn Fishing Extravaganza, catch 40 Speckled Tastyfish from contest pools "
+                    .. "along the Stranglethorn coast. Move to another pool when one runs out.",
+                nil, "Watch the Stranglethorn coast for schools during the fishing contest."),
+            routeStep("Turn in Master Angler",
+                "Bring the 40 fish to Riggle Bassbait in Booty Bay while prize turn-ins are still available. "
+                    .. "A qualifying Master Angler turn-in earns one Extravagant Extravaganza Coin.",
+                { mapID = 1434, x = 0.274, y = 0.769, label = "Riggle Bassbait" },
+                "Bring your catch to the contest organizer in Booty Bay before the prizes are claimed."),
+            routeStep("Trade for Bitter Baitling",
+                "Trade one Extravagant Extravaganza Coin to Jang in Booty Bay for Bitter Baitling, "
+                    .. "then use the item to learn the companion.",
+                { mapID = 1434, x = 0.267, y = 0.763, label = "Jang" },
+                "The organizer's apprentice trades fishing prizes for the winner's coin."),
+        },
+    })
+end
+
+local function weevilKNeevilRoute()
+    local amaryllis = { mapID = 1435, x = 0.251, y = 0.542, label = "Amaryllis Webb" }
+    return ns.NormalizeSecretRoute({
+        id = "weevil-k-neevil",
+        title = "Weevil K. Neevil",
+        sourceURL = "https://polestar.guide/guides/collectibles/pets/weevil-k-neevil",
+        steps = {
+            routeStep("Accept My Little Friends",
+                "At level 25 or higher, accept My Little Friends from Amaryllis Webb in western Swamp of Sorrows. "
+                    .. "Open her Entomology Starter Kit to get the capture tools.",
+                amaryllis, "A collector in the western swamp needs help finding three creatures."),
+            routeStep("Catch an Arbor Tarantula",
+                "Look for an Arbor Tarantula in northern Stranglethorn Vale and use its matching capture tool.",
+                { mapID = 1434, x = 0.431, y = 0.167, label = "Arbor Tarantula search area" },
+                "Search northern Stranglethorn for a spider specimen."),
+            routeStep("Catch a Hay Weevil",
+                "Look for a Hay Weevil in northwestern Arathi Highlands and use its matching capture tool.",
+                { mapID = 1417, x = 0.310, y = 0.263, label = "Hay Weevil search area" },
+                "Look for a tiny weevil in the northwestern Arathi Highlands."),
+            routeStep("Catch a Flesh Picker",
+                "Look for a Flesh Picker near the Kodo Graveyard in Desolace and use its matching capture tool.",
+                { mapID = 1443, x = 0.481, y = 0.571, label = "Flesh Picker search area" },
+                "Look among the bones in Desolace for the final specimen."),
+            routeStep("Return with the three specimens",
+                "Return to Amaryllis Webb and turn in My Little Friends. Use Weevil K. Neevil to learn the companion.",
+                amaryllis, "Return to the collector in Swamp of Sorrows."),
+        },
+    })
+end
+
+local function giftOfGallopingRoute()
+    return ns.NormalizeSecretRoute({
+        id = "gift-of-galloping",
+        title = "Gift of Galloping",
+        sourceURL = "https://www.wowhead.com/forever/item=271871/gift-of-galloping#comments",
+        steps = {
+            routeStep("Find Mister Graphed",
+                "Find Mister Graphed near the Black Market in Powderfuse Port, Riverglades. Buy the "
+                    .. "bind-on-pickup Gift of Galloping for 150 gold on the character who will use it. "
+                    .. "It requires level 60 to use and increases mounted speed by 10% for 15 days. "
+                    .. "The effect's timer continues while you are offline.",
+                { mapID = 2548, x = 0.783, y = 0.520, label = "Mister Graphed" },
+                "Look for a goblin near Powderfuse Port's Black Market who sells a riding boost."),
+        },
+    })
+end
+
 function ns.StandaloneSecrets()
     -- Route facts cross-checked against the Forever guides from Method and Wowhead.
     local source = "https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards"
@@ -1366,5 +1437,8 @@ function ns.StandaloneSecrets()
     if alliance then
         routes[#routes + 1] = babyCrocoliskRoute()
     end
+    routes[#routes + 1] = bitterBaitlingRoute()
+    routes[#routes + 1] = weevilKNeevilRoute()
+    routes[#routes + 1] = giftOfGallopingRoute()
     return routes
 end
