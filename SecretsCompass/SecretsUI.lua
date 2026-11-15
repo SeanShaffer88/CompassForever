@@ -203,12 +203,14 @@ local function hideSavedMapMarker(marker)
     end
 end
 
+local function positiveFinite(value)
+    return readable(value) and type(value) == "number" and value > 0 and value < math.huge
+end
+
 local function positionSavedMapMarker(marker, waypoint)
     local canvas = marker:GetParent()
     local ok, width, height = pcall(function() return canvas:GetWidth(), canvas:GetHeight() end)
-    if not ok or not readable(width) or not readable(height)
-        or type(width) ~= "number" or type(height) ~= "number"
-        or not (width > 0 and width < math.huge and height > 0 and height < math.huge) then
+    if not ok or not positiveFinite(width) or not positiveFinite(height) then
         return false
     end
     if marker.canvasWidth ~= width or marker.canvasHeight ~= height then
@@ -258,6 +260,37 @@ local function createSavedMapMarker(canvas)
     return marker
 end
 
+local function centerSavedMapMarker(marker)
+    local map = marker.map
+    if type(map.InstantPanAndZoom) ~= "function" then
+        return
+    end
+    local scale, maxScale = map:GetCanvasScale(), map:GetScaleForMaxZoom()
+    if not positiveFinite(scale) or not positiveFinite(maxScale) or scale > maxScale then
+        return
+    end
+    local viewport = map:GetCanvasContainer()
+    if not readable(viewport) or not viewport then
+        return
+    end
+    local width, height = viewport:GetWidth(), viewport:GetHeight()
+    if not positiveFinite(width) or not positiveFinite(height) then
+        return
+    end
+
+    local waypoint = marker.waypointSnapshot
+    -- Centering needs half the viewport to fit between the point and each nearest edge.
+    local xClearance = math.min(waypoint.x, 1 - waypoint.x)
+    local yClearance = math.min(waypoint.y, 1 - waypoint.y)
+    local requiredScale = maxScale
+    if xClearance > 0 and yClearance > 0 then
+        requiredScale = math.max(width / (2 * marker.canvasWidth * xClearance),
+            height / (2 * marker.canvasHeight * yClearance))
+    end
+    local targetScale = math.max(scale, math.min(maxScale, requiredScale))
+    map:InstantPanAndZoom(targetScale, waypoint.x, waypoint.y, true)
+end
+
 local function showSavedMapMarker(panel, selection)
     local map = WorldMapFrame
     local canvas = map:GetCanvas()
@@ -278,6 +311,9 @@ local function showSavedMapMarker(panel, selection)
         marker.selection, marker.map, marker.remaining = selection, map, 15
         marker:Show()
         marker:SetScript("OnUpdate", updateSavedMapMarker)
+        if marker:IsVisible() then
+            pcall(centerSavedMapMarker, marker)
+        end
     end
 end
 

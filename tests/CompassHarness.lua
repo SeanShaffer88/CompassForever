@@ -2092,11 +2092,29 @@ do
     local mapOpens, shownMap, mapShown, mapOpenMode = {}, nil, false, "confirm"
     local canvas = region(UIParent)
     canvas:SetSize(1000, 500)
+    local camera = { viewport = region(UIParent), pans = {}, scale = 1.25, maxZoom = 2.5 }
+    camera.viewport:SetSize(446, 251)
     WorldMapFrame = {
         IsShown = function() return mapShown end,
         GetMapID = function() return shownMap end,
         GetCanvas = function() return canvas end,
+        GetCanvasContainer = function() return camera.viewport end,
+        GetCanvasScale = function() return camera.scale end,
+        GetScaleForMaxZoom = function() return camera.maxZoom end,
+        InstantPanAndZoom = function(self, scale, x, y, userAction)
+            assert(self == WorldMapFrame)
+            camera.pans[#camera.pans + 1] = { scale, x, y, userAction }
+            if camera.throws then
+                error("Mock camera failure")
+            end
+        end,
     }
+    local function assertPan(before, scale, x, y)
+        local pan = camera.pans[#camera.pans]
+        assert(#camera.pans == before + 1 and math.abs(pan[1] - scale) < 0.000001
+            and pan[2] == x and pan[3] == y and pan[4] == true,
+            "The native camera receives the expected scale and normalized saved point exactly once")
+    end
     local function openWorldMap(mapID)
         mapOpens[#mapOpens + 1] = mapID
         if mapOpenMode == "throw" then
@@ -2174,20 +2192,29 @@ do
     C_Map.OpenWorldMap = openWorldMap
     journal.controls.routeSearch:SetText("no matching secret")
     local marker = assertShowOnMap(journal, 1432, 0.777, 0.749)
+    assertPan(0, 1.25, 0.777, 0.749)
     canvas:SetSize(900, 700)
     marker.scripts.OnUpdate(marker, 5)
+    assert(#camera.pans == 1, "Resizing and maintaining the marker does not move the camera")
     assertMapMarker(marker, 0.777, 0.749)
     marker.scripts.OnUpdate(marker, 9.5)
     assert(marker:IsVisible(), "The marker remains visible before its lifetime ends")
     marker.scripts.OnUpdate(marker, 0.5)
     assert(not marker:IsShown() and not marker.scripts.OnUpdate, "The marker expires and stops updating at 15 seconds")
 
+    camera.viewport:SetSize(601, 702.8)
     assert(assertShowOnMap(journal, 1432, 0.777, 0.749) == marker, "Repeated opens reuse the same marker")
+    assertPan(1, 2.0, 0.777, 0.749)
     shownMap = 1
     marker.scripts.OnUpdate(marker, 0)
-    assert(not marker:IsShown() and not marker.scripts.OnUpdate, "Changing maps removes the marker on the next update")
+    assert(not marker:IsShown() and not marker.scripts.OnUpdate and #camera.pans == 2,
+        "Changing maps removes the marker without moving the camera")
 
+    camera.throws = true
     assertShowOnMap(journal, 1432, 0.777, 0.749)
+    assertPan(2, 2.0, 0.777, 0.749)
+    assertMapMarker(marker, 0.777, 0.749)
+    camera.throws = false
     canvas:Hide()
     marker.scripts.OnHide(marker)
     canvas:Show()
@@ -2200,12 +2227,20 @@ do
     saved.reveals[condor.id] = "coordinates"
     journal.controls.routeSearch:SetText("no matching secret")
 
-    local getCanvas = WorldMapFrame.GetCanvas
+    local getCanvas, nativePan = WorldMapFrame.GetCanvas, WorldMapFrame.InstantPanAndZoom
+    camera.pansBeforeFallback = #camera.pans
     WorldMapFrame.GetCanvas = nil
     assertShowOnMap(journal, 1432)
+    assert(#camera.pans == camera.pansBeforeFallback, "No marker means no camera movement")
     WorldMapFrame.GetCanvas = getCanvas
 
+    WorldMapFrame.InstantPanAndZoom = nil
     assertShowOnMap(journal, 1432, 0.777, 0.749)
+    assert(#camera.pans == camera.pansBeforeFallback, "The marker still draws without a native camera method")
+    WorldMapFrame.InstantPanAndZoom = nativePan
+
+    assertShowOnMap(journal, 1432, 0.777, 0.749)
+    camera.pansBeforeInvalidMap = #camera.pans
     mapOpenMode = "throw"
     click(showOnMap)
     assert(journal:IsShown() and journal.stepTitle:GetText() == "Could not open the saved map."
@@ -2229,8 +2264,8 @@ do
     saved.reveals[condor.id] = "distance"
     local openCount = #mapOpens
     click(showOnMap)
-    assert(#mapOpens == openCount and not showOnMap:IsVisible(),
-        "A stale Show on Map click rechecks the paused reveal level")
+    assert(#mapOpens == openCount and not showOnMap:IsVisible() and #camera.pans == camera.pansBeforeInvalidMap,
+        "Stale reveal or invalid maps never move the camera")
     saved.reveals[condor.id] = "coordinates"
     mapOpenMode = "confirm"
     journal.controls.routeSearch:SetText("no matching secret")
@@ -2420,13 +2455,21 @@ do
     copyInput = assertCopyWaypoint(journal, "/mappin 4 10.00 20.00")
     assertSetWaypoint(journal, 4, 0.10, 0.20)
     assert(journal.controls.clearWaypoint:IsVisible(), "Imported waypoints can be owned even when the map name is unknown")
+    camera.pansBeforeImport = #camera.pans
     local importedMarker = assertShowOnMap(journal, 4, 0.10, 0.20)
+    assertPan(camera.pansBeforeImport, camera.maxZoom, 0.10, 0.20)
     local importedPoint = saved.lastPaused.route.steps[2].waypoints[2]
     importedPoint.x = 0.1000001
     journal.controls.routeSearch:SetText("no matching secret")
     assert(not importedMarker:IsShown() and not importedMarker.scripts.OnUpdate,
         "A changed saved point clears the marker even if its rounded map command is identical")
+    camera.viewport:SetSize(120, 120)
+    importedPoint.x = 0
+    journal.controls.routeSearch:SetText("")
+    assertShowOnMap(journal, 4, 0, 0.20)
+    assertPan(camera.pansBeforeImport + 1, camera.maxZoom, 0, 0.20)
     importedPoint.x = 0.10
+    journal.controls.routeSearch:SetText("no matching secret")
     local readsBeforeReload, importedPin = getterCalls, waypoint
     C_Map.GetMapInfo = getMapInfo
     journal = reloadJournal(saved)
