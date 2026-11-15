@@ -943,6 +943,104 @@ local function whisperingHorrorResidueRoute()
     })
 end
 
+local function blessingOfKalimdorRoute()
+    return ns.NormalizeSecretRoute({
+        id = "blessing-of-kalimdor",
+        title = "Blessing of Kalimdor",
+        sourceURL = "https://wowhandbook.com/news/blessing-of-kalimdor-set-guide/",
+        steps = {
+            {
+                title = "Hunt Takk the Leaper",
+                note = "Search the northern Barrens for Takk the Leaper and hunt for the Raptor Hide Cloak (requires level 16). "
+                    .. "The pins mark patrol search areas. The cloak may take more than one kill.",
+                clue = "A rare raptor roams the northern Barrens.",
+                waypoints = {
+                    { mapID = 1413, x = 0.608, y = 0.134, label = "Takk patrol search area" },
+                    { mapID = 1413, x = 0.596, y = 0.083, label = "Takk northern search area" },
+                    { mapID = 1413, x = 0.586, y = 0.075, label = "Takk western search area" },
+                },
+            },
+            {
+                title = "Hunt Swiftmane",
+                note = "Search the plains north of Ratchet for the roaming zhevra Swiftmane. "
+                    .. "Hunt for the Signet of the Zhevra (requires level 18). Use Next Location to check the patrol area.",
+                clue = "Look for a swift zhevra north of Ratchet.",
+                waypoints = {
+                    { mapID = 1413, x = 0.612, y = 0.345, label = "Swiftmane patrol search area" },
+                    { mapID = 1413, x = 0.604, y = 0.329, label = "Swiftmane central search area" },
+                    { mapID = 1413, x = 0.606, y = 0.306, label = "Swiftmane northern search area" },
+                },
+            },
+            routeStep("Hunt Humar the Pridelord",
+                "Look for the black lion under the large tree north of Ratchet. Hunt for the Mark of the Pack Leader "
+                    .. "(requires level 20). Wearing any two pieces increases movement speed in the Barrens and Stonetalon Mountains by 5%.",
+                { mapID = 1413, x = 0.621, y = 0.333, label = "Humar's tree" },
+                "A rare lion rests in the shade north of Ratchet."),
+        },
+    })
+end
+
+local function travelersSymbolsRoute()
+    return ns.NormalizeSecretRoute({
+        id = "travelers-symbols",
+        title = "Traveler's Symbols",
+        sourceURL = "https://www.wowhead.com/forever/guide/travelers-symbols-toy-secret-walkthrough",
+        steps = {
+            routeStep("Enter Blackrock Depths",
+                "Ever After is available to either faction from level 48. Approach Blackrock Mountain from southern "
+                    .. "Searing Gorge. Inside, descend the chains past the tomb, enter the quarry, and take the northern "
+                    .. "tunnel to Blackrock Depths.",
+                { mapID = 1427, x = 0.352, y = 0.842, label = "Approximate Blackrock Mountain approach" },
+                "Follow the chains into the lower reaches of Blackrock Mountain."),
+            routeStep("Find the bridge east of the Ring of Law",
+                "Find the northbound bridge over the lava east of the Ring of Law. Look over the left side for the "
+                    .. "friendly Dark Iron dwarf near the base of a pillar. Clear the enemies on the bridge before climbing down.",
+                nil, "Look down from a bridge near the arena."),
+            routeStep("Reach the Rugged Traveler",
+                "By the small brazier, climb onto the left railing and jump to the platform alongside the rock wall. "
+                    .. "Hug the wall to the far corner and push into the rock. With your left shoulder against the wall, "
+                    .. "move until you slip into the opening, then drop onto the outcrop below. Speak with the Rugged "
+                    .. "Traveler to complete Ever After and collect Traveler's Symbols.",
+                nil, "The traveler waits below a ledge reached from the bridge railing."),
+        },
+    })
+end
+
+local function bloodyMapRoute()
+    local agent = { mapID = 1437, x = 0.5153, y = 0.5935, label = "Deathstalker Agent" }
+    return ns.NormalizeSecretRoute({
+        id = "bloody-map",
+        title = "The Bloody Map (Known Steps)",
+        sourceURL = "https://wowhandbook.com/news/bloody-map-excavation-site-wetlands/",
+        ongoing = true,
+        steps = {
+            routeStep("Pick up Dragonmaw Rumors",
+                "Horde, level 24 or higher. Find Zaruk at the bottom of the stairs in Hammerfall, Arathi Highlands, "
+                    .. "and accept Dragonmaw Rumors.",
+                { mapID = 1417, x = 0.7454, y = 0.3564, label = "Zaruk" },
+                "Ask around Hammerfall about Dragonmaw activity."),
+            routeStep("Take the path above the excavation camp",
+                "In the Wetlands, use the uphill path near the excavation to reach the ledge above the camp.",
+                { mapID = 1437, x = 0.5317, y = 0.6567, label = "Path up to the Deathstalker Agent" },
+                "Look for an uphill approach near the excavation."),
+            routeStep("Accept Open the Maw",
+                "Turn in Dragonmaw Rumors to the Deathstalker Agent above the excavation camp and accept Open the Maw.",
+                agent, "A Deathstalker is watching the excavation from above."),
+            routeStep("Clear the excavation",
+                "Enter Excavation Site: Wetlands. Defeat two Dragonmaw Saboteurs and four Dragonmaw Warders, "
+                    .. "and loot the Dragonmaw Dispatch from a Dragonmaw Thaumaturgist inside.",
+                { mapID = 1437, x = 0.478, y = 0.563, label = "Approximate Excavation Site portal" },
+                "Follow the Dragonmaw into the excavation and look for their orders."),
+            routeStep("Collect the Bloody Map",
+                "Return to the Deathstalker Agent and turn in Open the Maw to receive the Bloody Map.",
+                agent, "Bring what you recovered back to the lookout."),
+            routeStep("Unresolved Destination",
+                "Read the Bloody Map and keep it. Its destination and any follow-up are unconfirmed.",
+                nil, "The map remains a lead with no confirmed destination."),
+        },
+    })
+end
+
 function ns.StandaloneSecrets()
     -- Route facts cross-checked against the Forever guides from Method and Wowhead.
     local source = "https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards"
@@ -1013,6 +1111,11 @@ function ns.StandaloneSecrets()
     else
         routes[#routes + 1] = silverOfTheWavesRoute()
         routes[#routes + 1] = applejackStillRoute()
+    end
+    routes[#routes + 1] = blessingOfKalimdorRoute()
+    routes[#routes + 1] = travelersSymbolsRoute()
+    if not alliance then
+        routes[#routes + 1] = bloodyMapRoute()
     end
     return routes
 end

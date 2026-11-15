@@ -970,6 +970,12 @@ do
         ["silver-of-the-waves"] = { {1432, 481, 396}, {1432, 456, 434}, {1432, 489, 543}, {1432, 395, 393} },
         ["applejack-still"] = { {1429, 418, 672}, {1429, 246, 580}, {1429, 241, 732} },
         ["whispering-horror-residue"] = { {1420, 129, 657}, {1458, 491, 146} },
+        ["blessing-of-kalimdor"] = {
+            {1413, 608, 134}, {1413, 596, 83}, {1413, 586, 75}, {1413, 612, 345},
+            {1413, 604, 329}, {1413, 606, 306}, {1413, 621, 333},
+        },
+        ["travelers-symbols"] = { {1427, 352, 842} },
+        ["bloody-map"] = { {1417, 745.4, 356.4}, {1437, 531.7, 656.7}, {1437, 515.3, 593.5}, {1437, 478, 563} },
         ["manual-scavenger-hunt"] = {
             {1417, 226.9, 241.7}, {1424, 876.1, 479.1}, {1458, 228.6, 361.9},
             {2548, 265.6, 455.8}, {2548, 267.2, 477.4}, {1419, 451.9, 164.7},
@@ -982,22 +988,42 @@ do
         slash("secrets")
         local choices = namespace.StandaloneSecrets()
         local isAlliance = side == "Alliance"
-        assert(#choices == 10 and secrets.progress:GetText() == "0 of 10 Built-In Routes Finished",
-            "Each faction has ten built-in routes")
+        local expectedCount = isAlliance and 12 or 13
+        assert(#choices == expectedCount
+            and secrets.progress:GetText() == ("0 of %d Built-In Routes Finished"):format(expectedCount),
+            "Faction-specific additions update the journal count")
+        assert(choices[11].id == "blessing-of-kalimdor" and choices[12].id == "travelers-symbols",
+            "Both factions receive the new shared routes")
+        local symbols = choices[12]
+        assert(#symbols.steps == 3 and #symbols.steps[1].waypoints == 1
+            and #symbols.steps[2].waypoints == 0 and #symbols.steps[3].waypoints == 0,
+            "Traveler's Symbols has an outdoor approach and written directions inside the dungeon")
+        for index = 11, #choices do
+            for _, step in ipairs(choices[index].steps) do
+                assert(not step.completionQuestID, "New routes advance manually")
+            end
+        end
         if isAlliance then
             assert(choices[9].id == "silver-of-the-waves" and choices[10].id == "applejack-still"
                 and not secrets.controls.routes["excitable-slime"]:IsVisible()
-                and not secrets.controls.routes["whispering-horror-residue"]:IsVisible(),
+                and not secrets.controls.routes["whispering-horror-residue"]:IsVisible()
+                and not secrets.controls.routes["bloody-map"]:IsVisible(),
                 "Alliance receives Silver of the Waves and Applejack Still")
         else
             assert(choices[9].id == "excitable-slime" and choices[10].id == "whispering-horror-residue",
                 "Horde receives Excitable Slime and Whispering Horror Residue")
+            local bloodyMap = choices[13]
+            assert(bloodyMap.id == "bloody-map" and bloodyMap.ongoing and #bloodyMap.steps == 6
+                and #bloodyMap.steps[6].waypoints == 0
+                and bloodyMap.steps[3].waypoints[1].x == bloodyMap.steps[5].waypoints[1].x
+                and bloodyMap.steps[3].waypoints[1].y == bloodyMap.steps[5].waypoints[1].y,
+                "The Horde route returns to the same agent before reaching a text-only checkpoint")
         end
-        local lastRow = secrets.controls.routes[choices[10].id]
+        local lastRow = secrets.controls.routes[choices[expectedCount].id]
         local _, _, rowY = lastRow:GetPoint()
-        assert(secrets:GetHeight() == 531
+        assert(secrets:GetHeight() == (isAlliance and 591 or 621)
             and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
-            "The tenth route row fits above navigation")
+            "The last route row fits above navigation")
         for i = 3, #choices do
             local choice = choices[i]
             assert(choice.sourceURL and secrets.controls.routes[choice.id]:IsVisible(),
@@ -1054,7 +1080,23 @@ do
     end
     local slime = secrets.controls.routes["excitable-slime"]
     click(slime)
+    click(secrets.controls.routes["bloody-map"])
     assert(not SecretCompassSecretDB.route, "A stale Horde route row cannot start on Alliance")
+
+    click(secrets.controls.routes["blessing-of-kalimdor"])
+    assert(secrets.routeTitle:GetText() == "Blessing of Kalimdor" and not secrets.controls.mapCommand:IsVisible(),
+        "Alliance can start the Barrens hunt with clues only")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1413 59.60 8.30",
+        "Next Location selects an alternate Takk patrol search point")
+    click(secrets.controls.next)
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1413 60.40 32.90",
+        "Next Location selects an alternate Swiftmane patrol search point")
+    click(secrets.controls.stop)
 
     local silver = secrets.controls.routes["silver-of-the-waves"]
     click(silver)
@@ -1098,6 +1140,22 @@ do
     click(secrets.controls.mapCommand)
     assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1458 50.90 53.40",
         "Next Location cycles the canal search areas")
+    click(secrets.controls.stop)
+
+    click(secrets.controls.routes["bloody-map"])
+    click(secrets.controls.revealCoordinates)
+    slash("step 4")
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1437 47.80 56.30",
+        "The Horde route copies the approximate excavation portal")
+    slash("step 6")
+    click(secrets.controls.revealFull)
+    slash("next")
+    assert(secrets.stepTitle:GetText() == "Unresolved Destination"
+        and secrets.controls.next:GetText() == "Known End" and not secrets.controls.next.enabled
+        and not secrets.controls.mapCommand:IsVisible() and SecretCompassSecretDB.index == 6
+        and not SecretCompassSecretDB.finishedRoutes["bloody-map"],
+        "The unresolved map destination has no waypoint or finish action")
     click(secrets.controls.stop)
 
     local manual = secrets.controls.routes["manual-scavenger-hunt"]
