@@ -1088,6 +1088,7 @@ local function initSecrets()
         end,
         getRoutes = standaloneRoutes,
         getResumeStep = function(route) return secretTracker:GetResumeStep(route) end,
+        hasFinished = function(route) return secretTracker:HasFinished(route) end,
         start = function(id)
             for _, route in ipairs(standaloneRoutes()) do
                 if route.id == id then

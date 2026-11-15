@@ -16,6 +16,13 @@ end
 
 function methods:SetScript(key, fn) self.scripts[key] = fn end
 function methods:GetScript(key) return self.scripts[key] end
+function methods:HookScript(key, fn)
+    local prior = self.scripts[key]
+    self.scripts[key] = function(...)
+        if prior then prior(...) end
+        fn(...)
+    end
+end
 function methods:RegisterEvent(key) self.events[key] = true end
 function methods:UnregisterEvent(key) self.events[key] = nil end
 function methods:Show() self.shown = true end
@@ -126,6 +133,13 @@ UISpecialFrames = {}
 function CreateFrame(_, name, parent, template)
     local frame = region(parent)
     if template == "UICheckButtonTemplate" then frame.Text = frame:CreateFontString() end
+    if template == "PortraitFrameTemplate" then
+        frame.PortraitContainer = { portrait = frame:CreateTexture() }
+        frame.TitleContainer = { TitleText = frame:CreateFontString() }
+        frame.CloseButton = region(frame)
+        frame.SetTitle = function(self, title) self.TitleContainer.TitleText:SetText(title) end
+        frame:SetScript("OnHide", function(self) self.nativeHideRan = true end)
+    end
     frames[#frames + 1] = frame
     if name then _G[name] = frame end
     return frame
@@ -935,6 +949,9 @@ fireAddonEvent("PLAYER_LOGIN")
 assert(not SecretsCompassSecretChecklistTrackButton, "Standalone mode has no foreign-addon button")
 slash("secrets")
 local secrets = assert(SecretsCompassSecrets)
+assert(secrets.TitleContainer.TitleText:GetText() == "SecretsCompass Journal"
+    and secrets.PortraitContainer.portrait.texture:match("MinimapCompass%.tga$")
+    and secrets.controls.close == secrets.CloseButton, "Journal uses its own artwork and the native frame")
 local list = namespace.StandaloneSecrets()
 local cozyButton = assert(secrets.controls.routes[list[1].id])
 local alcazButton = assert(secrets.controls.routes[list[2].id])
@@ -1085,6 +1102,7 @@ assert(not mapInput:IsVisible() and not mapInput.focused and mapInput:GetText() 
     "Escape dismisses the selectable command")
 click(mapCommand)
 secrets.scripts.OnHide(secrets)
+assert(secrets.nativeHideRan, "Journal cleanup preserves the native OnHide script")
 assert(not mapInput:IsVisible() and not mapInput.focused and mapInput:GetText() == "",
     "Closing the panel clears command text and focus")
 click(secrets.controls.next)
@@ -1095,9 +1113,15 @@ assert(secrets.note:GetText():find("Rix Xizzix", 1, true))
 click(secrets.controls.next)
 assert(#alcaz.steps[4].waypoints == 0 and not marker:IsVisible(), "Final assembly has no compass target")
 assert(not mapCommand:IsVisible() and not mapInput:IsVisible(), "Text-only steps have no map command")
+assert(not SecretCompassSecretDB.finishedRoutes[alcaz.id], "Reaching the final step does not mark it finished")
 slash("next")
 assert(SecretCompassSecretDB.route == nil and alcazButton:IsVisible()
-    and alcazButton:GetText():find("Track", 1, true), "Finished routes are offered as a fresh run")
+    and alcazButton:GetText():find("Replay", 1, true), "Finished routes are offered for replay")
+click(alcazButton)
+assert(SecretCompassSecretDB.index == 1, "Replay starts from the first step")
+click(secrets.controls.next)
+click(secrets.controls.stop)
+assert(alcazButton:GetText():find("Resume", 1, true), "A paused replay can resume")
 click(cozyButton)
 assert(SecretCompassSecretDB.index == 2 and SecretCompassSecretDB.route.title == "Cozy Sleeping Bag",
     "Starting a second secret preserves the first secret's checkpoint")
@@ -1306,6 +1330,12 @@ assert(restored:GetResumeStep(changed) == nil, "A changed guide source cannot cl
 local duplicate = {id = route.id, title = route.title, sourceURL = route.sourceURL, steps = {pickStep, pickStep}}
 assert(restored:GetResumeStep(duplicate) == nil, "Duplicate step titles and quest identities are ambiguous")
 assert(restored:Track(moved) and restored:Finish() and restored:GetResumeStep(moved) == nil)
+assert(restored:HasFinished(moved) and not restored:HasFinished(changed),
+    "Completion belongs to the original guide source")
+assert(namespace.CreateSecretTracker(saved, function() end):HasFinished(moved),
+    "Completion survives a new tracker on the same character")
+assert(not namespace.CreateSecretTracker({}, function() end):HasFinished(moved),
+    "Another character does not inherit completion")
 assert(restored:Track(moved))
 local _, replayIndex = restored:GetRoute()
 assert(replayIndex == 1 and restored:GetResumeStep(another) == 2, "Finish resets only the completed route")

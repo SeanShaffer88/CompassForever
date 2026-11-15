@@ -1,5 +1,6 @@
 local _, ns = ...
 local maxSteps, maxLocations, maxRevealRoutes, maxCheckpoints = 128, 24, 256, 256
+local maxFinishedRoutes = 256
 local revealLevels = { clue = true, distance = true, coordinates = true, full = true }
 
 local function readable(value)
@@ -215,6 +216,24 @@ function ns.CreateSecretTracker(savedState, onChanged)
     end
     savedState.checkpoints = checkpoints
 
+    local finishedRoutes, finishedCount = {}, 0
+    if readable(savedState.finishedRoutes) and type(savedState.finishedRoutes) == "table" then
+        for id, record in pairs(savedState.finishedRoutes) do
+            if finishedCount == maxFinishedRoutes then
+                break
+            end
+            if readable(id) and type(id) == "string" and safeText(id, 404) == id
+                and readable(record) and type(record) == "table" and readable(record.sourceURL) then
+                local sourceURL = safeURL(record.sourceURL)
+                if record.sourceURL == nil or sourceURL then
+                    finishedRoutes[id] = { sourceURL = sourceURL }
+                    finishedCount = finishedCount + 1
+                end
+            end
+        end
+    end
+    savedState.finishedRoutes = finishedRoutes
+
     local function forget(id)
         if checkpoints[id] then
             checkpoints[id] = nil
@@ -311,6 +330,12 @@ function ns.CreateSecretTracker(savedState, onChanged)
         end
     end
 
+    function tracker:HasFinished(route)
+        local clean = ns.NormalizeSecretRoute(route)
+        local finished = clean and finishedRoutes[clean.id]
+        return finished ~= nil and finished.sourceURL == clean.sourceURL
+    end
+
     function tracker:Track(route)
         local clean = ns.NormalizeSecretRoute(route)
         if not clean then
@@ -371,10 +396,18 @@ function ns.CreateSecretTracker(savedState, onChanged)
     end
 
     function tracker:Finish()
-        local route = self:GetRoute()
-        if not route then
+        local route, index = self:GetRoute()
+        if not route or index ~= #route.steps then
             return false
         end
+        if not finishedRoutes[route.id] then
+            if finishedCount == maxFinishedRoutes then
+                finishedRoutes[next(finishedRoutes)] = nil
+            else
+                finishedCount = finishedCount + 1
+            end
+        end
+        finishedRoutes[route.id] = { sourceURL = route.sourceURL }
         forget(route.id)
         select(nil)
         onChanged()

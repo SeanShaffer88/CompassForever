@@ -1,6 +1,9 @@
-local _, namespace = ...
+local addonName, namespace = ...
 
 local panelName = "SecretsCompassSecrets"
+local journalTitle = "SecretsCompass Journal"
+local portraitPath = "Interface\\AddOns\\" .. addonName .. "\\Media\\MinimapCompass.tga"
+local journalHeight = 427
 
 local function label(parent, font, x, y, width, height)
     local text = parent:CreateFontString(nil, "OVERLAY", font)
@@ -70,8 +73,8 @@ local function mapCommandText(waypoint)
 end
 
 local function makePanel(api)
-    local panel = CreateFrame("Frame", panelName, UIParent)
-    panel:SetSize(424, 401)
+    local panel = CreateFrame("Frame", panelName, UIParent, "PortraitFrameTemplate")
+    panel:SetSize(424, journalHeight)
     panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 34, -126)
     panel:SetFrameStrata("DIALOG")
     panel:SetClampedToScreen(true)
@@ -79,19 +82,32 @@ local function makePanel(api)
     panel:EnableMouse(true)
     panel:Hide()
 
-    local background = panel:CreateTexture(nil, "BACKGROUND")
-    background:SetAllPoints()
-    background:SetColorTexture(0.102, 0.112, 0.115, 1)
-    local rule = panel:CreateTexture(nil, "BORDER")
-    rule:SetPoint("TOPLEFT", 2, -39)
-    rule:SetPoint("TOPRIGHT", -2, -39)
-    rule:SetHeight(1)
-    rule:SetColorTexture(0.40, 0.34, 0.23, 1)
+    local portraitContainer = panel.PortraitContainer
+    local portrait = panel.portrait or (portraitContainer and portraitContainer.portrait)
+    if not portrait then
+        portrait = panel:CreateTexture(nil, "ARTWORK")
+        portrait:SetSize(40, 40)
+        portrait:SetPoint("TOPLEFT", 10, -8)
+    end
+    if SetPortraitToAsset then
+        SetPortraitToAsset(portrait, portraitPath)
+    else
+        portrait:SetTexture(portraitPath)
+    end
+
+    local insetEdge = panel:CreateTexture(nil, "BACKGROUND", nil, 1)
+    insetEdge:SetPoint("TOPLEFT", 9, -64)
+    insetEdge:SetPoint("BOTTOMRIGHT", -9, 8)
+    insetEdge:SetColorTexture(0.33, 0.26, 0.15, 1)
+    local inset = panel:CreateTexture(nil, "BACKGROUND", nil, 2)
+    inset:SetPoint("TOPLEFT", insetEdge, "TOPLEFT", 1, -1)
+    inset:SetPoint("BOTTOMRIGHT", insetEdge, "BOTTOMRIGHT", -1, 1)
+    inset:SetColorTexture(0.077, 0.070, 0.060, 1)
 
     local drag = CreateFrame("Frame", nil, panel)
-    drag:SetPoint("TOPLEFT")
-    drag:SetPoint("TOPRIGHT", -42, 0)
-    drag:SetHeight(39)
+    drag:SetPoint("TOPLEFT", 65, -2)
+    drag:SetPoint("TOPRIGHT", -42, -2)
+    drag:SetHeight(32)
     drag:EnableMouse(true)
     drag:RegisterForDrag("LeftButton")
     local dragging
@@ -108,13 +124,29 @@ local function makePanel(api)
         end
     end
     drag:SetScript("OnDragStop", stopMoving)
-    label(drag, "GameFontNormalLarge", 18, -11, 350, 22):SetText("SecretsCompass Secrets")
+    if panel.SetTitle then
+        panel:SetTitle(journalTitle)
+    elseif panel.TitleContainer and panel.TitleContainer.TitleText then
+        panel.TitleContainer.TitleText:SetText(journalTitle)
+    else
+        label(drag, "GameFontNormalLarge", 0, -8, 310, 22):SetText(journalTitle)
+    end
     panel.dragHandle = drag
 
-    panel.routeTitle = label(panel, "GameFontNormalLarge", 18, -51, 390, 34)
-    panel.progress = label(panel, "GameFontNormal", 18, -88, 390, 18)
-    panel.stepTitle = label(panel, "GameFontHighlight", 18, -111, 388, 34)
-    local noteScroll = CreateFrame("ScrollFrame", nil, panel)
+    local body = CreateFrame("Frame", nil, panel)
+    body:SetPoint("TOPLEFT", 0, -26)
+    body:SetPoint("BOTTOMRIGHT")
+    panel.body = body
+    panel.footerRule = body:CreateTexture(nil, "ARTWORK")
+    panel.footerRule:SetPoint("TOPLEFT", 18, -354)
+    panel.footerRule:SetPoint("TOPRIGHT", -18, -354)
+    panel.footerRule:SetHeight(1)
+    panel.footerRule:SetColorTexture(0.35, 0.28, 0.16, 1)
+
+    panel.routeTitle = label(body, "GameFontNormalLarge", 18, -51, 390, 34)
+    panel.progress = label(body, "GameFontNormal", 18, -88, 390, 18)
+    panel.stepTitle = label(body, "GameFontHighlight", 18, -111, 388, 34)
+    local noteScroll = CreateFrame("ScrollFrame", nil, body)
     noteScroll:SetPoint("TOPLEFT", 18, -146)
     noteScroll:SetSize(365, 53)
     local noteBody = CreateFrame("Frame", nil, noteScroll)
@@ -127,36 +159,39 @@ local function makePanel(api)
     panel.note = note
     panel.noteScroll = noteScroll
     panel.noteBody = noteBody
-    panel.locationText = label(panel, "GameFontHighlightSmall", 18, -205, 388, 28)
+    panel.locationText = label(body, "GameFontHighlightSmall", 18, -205, 388, 28)
     panel.locationText:SetTextColor(0.52, 0.90, 1)
-    panel.travel = label(panel, "GameFontHighlightSmall", 18, -233, 388, 31)
+    panel.travel = label(body, "GameFontHighlightSmall", 18, -233, 388, 31)
     panel.travel:SetTextColor(0.74, 0.77, 0.76)
-    panel.status = label(panel, "GameFontHighlightSmall", 18, -270, 272, 30)
+    panel.status = label(body, "GameFontHighlightSmall", 18, -270, 272, 30)
     panel.status:SetTextColor(0.74, 0.77, 0.76)
 
     local controls = { routes = {} }
     panel.controls = controls
-    controls.close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
-    controls.close:SetPoint("TOPRIGHT", -4, -3)
+    controls.close = panel.CloseButton
+    if not controls.close then
+        controls.close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
+        controls.close:SetPoint("TOPRIGHT", -4, -3)
+    end
     controls.close:SetScript("OnClick", function() panel:Hide() end)
     if type(UISpecialFrames) == "table" then
         table.insert(UISpecialFrames, panelName)
     end
 
-    controls.previous = button(panel, "Previous", 85, 18, -365, function() api.step(-1) end)
-    controls.next = button(panel, "Next", 85, 108, -365, api.next)
-    controls.stop = button(panel, "Pause", 70, 198, -365, api.stop)
-    controls.location = button(panel, "Next Location", 132, 274, -365, api.cycle)
-    controls.enableHUD = button(panel, "Show HUD", 108, 298, -265, api.enableHUD)
-    controls.revealClue = button(panel, "Clue", 84, 18, -300, function() api.setReveal("clue") end)
-    controls.revealDistance = button(panel, "Distance", 91, 107, -300, function() api.setReveal("distance") end)
-    controls.revealCoordinates = button(panel, "Coordinates", 111, 203, -300, function() api.setReveal("coordinates") end)
-    controls.revealFull = button(panel, "Full", 87, 319, -300, function() api.setReveal("full") end)
-    controls.suggested = button(panel, "Go to Suggested Step", 176, 18, -331, api.jumpSuggested)
-    panel.suggestion = label(panel, "GameFontHighlightSmall", 203, -336, 204, 23)
+    controls.previous = button(body, "Previous", 85, 18, -365, function() api.step(-1) end)
+    controls.next = button(body, "Next", 85, 108, -365, api.next)
+    controls.stop = button(body, "Pause", 70, 198, -365, api.stop)
+    controls.location = button(body, "Next Location", 132, 274, -365, api.cycle)
+    controls.enableHUD = button(body, "Show HUD", 108, 298, -265, api.enableHUD)
+    controls.revealClue = button(body, "Clue", 84, 18, -300, function() api.setReveal("clue") end)
+    controls.revealDistance = button(body, "Distance", 91, 107, -300, function() api.setReveal("distance") end)
+    controls.revealCoordinates = button(body, "Coordinates", 111, 203, -300, function() api.setReveal("coordinates") end)
+    controls.revealFull = button(body, "Full", 87, 319, -300, function() api.setReveal("full") end)
+    controls.suggested = button(body, "Go to Suggested Step", 176, 18, -331, api.jumpSuggested)
+    panel.suggestion = label(body, "GameFontHighlightSmall", 203, -336, 204, 23)
 
-    controls.jumpLabel = label(panel, "GameFontNormal", 18, -406, 128, 22)
-    local jumpInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    controls.jumpLabel = label(body, "GameFontNormal", 18, -406, 128, 22)
+    local jumpInput = CreateFrame("EditBox", nil, body, "InputBoxTemplate")
     jumpInput:SetSize(70, 24)
     jumpInput:SetPoint("TOPLEFT", 152, -401)
     jumpInput:SetAutoFocus(false)
@@ -181,7 +216,7 @@ local function makePanel(api)
         end
     end
 
-    controls.jumpGo = button(panel, "Go", 62, 230, -401, submitJump)
+    controls.jumpGo = button(body, "Go", 62, 230, -401, submitJump)
     jumpInput:SetScript("OnTextChanged", function()
         controls.jumpGo:SetEnabled(jumpCandidate() ~= nil)
     end)
@@ -193,12 +228,12 @@ local function makePanel(api)
     end
     jumpInput:SetScript("OnEscapePressed", panel.resetJump)
 
-    local mapInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    local mapInput = CreateFrame("EditBox", nil, body, "InputBoxTemplate")
     mapInput:SetSize(172, 24)
     mapInput:SetPoint("BOTTOMLEFT", 150, 10)
     mapInput:SetAutoFocus(false)
     controls.mapCommandInput = mapInput
-    local copyHint = label(panel, "GameFontHighlightSmall", 327, 0, 80, 15)
+    local copyHint = label(body, "GameFontHighlightSmall", 327, 0, 80, 15)
     copyHint:ClearAllPoints()
     copyHint:SetPoint("BOTTOMLEFT", 327, 13)
     copyHint:SetText("Ctrl+C to copy")
@@ -219,7 +254,7 @@ local function makePanel(api)
     end)
     mapInput:SetScript("OnEscapePressed", panel.resetMapCommand)
     mapInput:SetScript("OnEnterPressed", panel.resetMapCommand)
-    controls.mapCommand = button(panel, "Map Command", 120, 18, 0, function()
+    controls.mapCommand = button(body, "Map Command", 120, 18, 0, function()
         local _, waypoint = api.getCurrentStep()
         if panel:IsShown() and canShowMapCommand(waypoint, api.getReveal()) then
             jumpInput:ClearFocus()
@@ -235,11 +270,16 @@ local function makePanel(api)
     controls.mapCommand:SetPoint("BOTTOMLEFT", 18, 10)
     panel.resetMapCommand()
 
-    panel:SetScript("OnHide", function()
+    local function onHide()
         stopMoving()
         panel.resetJump()
         panel.resetMapCommand()
-    end)
+    end
+    if panel.HookScript then
+        panel:HookScript("OnHide", onHide)
+    else
+        panel:SetScript("OnHide", onHide)
+    end
 
     local function nudge(pixels)
         local limit = panel.noteBody:GetHeight() - noteScroll:GetHeight()
@@ -248,8 +288,8 @@ local function makePanel(api)
         controls.noteUp:SetEnabled(position > 0)
         controls.noteDown:SetEnabled(position < limit)
     end
-    controls.noteUp = button(panel, "^", 20, 387, -146, function() nudge(-32) end)
-    controls.noteDown = button(panel, "v", 20, 387, -173, function() nudge(32) end)
+    controls.noteUp = button(body, "^", 20, 387, -146, function() nudge(-32) end)
+    controls.noteDown = button(body, "v", 20, 387, -173, function() nudge(32) end)
     noteScroll:EnableMouseWheel(true)
     noteScroll:SetScript("OnMouseWheel", function(_, delta) nudge(-delta * 32) end)
 
@@ -307,23 +347,35 @@ function namespace.CreateSecretsUI(api)
             if #routes == 0 then
                 panel.note:SetText("Built-in routes need your character's Alliance or Horde faction.")
             end
+            local finishedCount = 0
             for index, choice in ipairs(routes) do
                 local id = choice.id
                 local position = -157 - (index - 1) * 30
                 local row = controls.routes[id]
                 if not row then
-                    row = button(panel, "", 388, 18, position, function() api.start(id) end)
+                    row = button(panel.body, "", 388, 18, position, function() api.start(id) end)
                     controls.routes[id] = row
                 else
                     row:ClearAllPoints()
                     row:SetPoint("TOPLEFT", 18, position)
                 end
                 local resumeStep = api.getResumeStep(choice)
-                row:SetText(resumeStep and ("Resume %s (Step %d)"):format(choice.title, resumeStep)
-                    or ("Track " .. choice.title))
+                local hasFinished = api.hasFinished(choice)
+                if hasFinished then
+                    finishedCount = finishedCount + 1
+                end
+                if resumeStep then
+                    row:SetText(("Resume %s (Step %d)"):format(choice.title, resumeStep))
+                else
+                    row:SetText((hasFinished and "Replay " or "Track ") .. choice.title)
+                end
                 row:Show()
             end
+            if #routes > 0 then
+                panel.progress:SetText(("%d of %d Built-In Routes Finished"):format(finishedCount, #routes))
+            end
         end
+        panel.footerRule:SetShown(tracking)
         controls.previous:SetShown(tracking)
         controls.next:SetShown(tracking)
         controls.stop:SetShown(tracking)
@@ -343,7 +395,7 @@ function namespace.CreateSecretsUI(api)
         end
         panel.mapCommandRoute, panel.mapCommandIndex = route, index
         panel.mapCommandWaypoint, panel.mapCommandReveal = waypoint, reveal
-        panel:SetHeight(401 + (jumpRoute and 34 or 0) + (showMapCommand and 34 or 0))
+        panel:SetHeight(journalHeight + (jumpRoute and 34 or 0) + (showMapCommand and 34 or 0))
         controls.mapCommand:SetShown(showMapCommand)
         controls.jumpLabel:SetShown(jumpRoute ~= nil)
         controls.jumpInput:SetShown(jumpRoute ~= nil)
