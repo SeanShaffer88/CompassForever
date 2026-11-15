@@ -5,16 +5,25 @@ local journalTitle = "SecretsCompass Journal"
 local portraitPath = "Interface\\AddOns\\" .. addonName .. "\\Media\\MinimapCompass.tga"
 local journalHeight = 471
 local routeRowHeight, routeHeadingHeight = 30, 24
-local routeListTop, routeFrameHeight, routePagerHeight = 157, 231, 30
+local browseToolbarHeight = 34
+local routeListTop, routeFrameHeight, routePagerHeight = 157 + browseToolbarHeight, 231 + browseToolbarHeight, 30
 local routePageInset = 10
-local routeCategories = {
-    pets = { order = 1, label = "Pets" },
-    collectibles = { order = 2, label = "Toys & Collectibles" },
-    utility = { order = 3, label = "Gear & Utility" },
-    professions = { order = 4, label = "Professions" },
-    mysteries = { order = 5, label = "Quests & Mysteries" },
+local categoryOrder = {
+    { key = "pets", label = "Pets", icon = "Ability_Hunter_BeastCall" },
+    { key = "collectibles", label = "Toys & Collectibles", icon = "INV_Misc_Gift_01" },
+    { key = "utility", label = "Gear & Utility", icon = "INV_Misc_Gear_01" },
+    { key = "professions", label = "Professions", icon = "Trade_BlackSmithing" },
+    { key = "mysteries", label = "Quests & Mysteries", icon = "INV_Misc_Book_11" },
 }
-local otherCategory = { order = 6, label = "Other Secrets" }
+local routeCategories = {}
+for index, category in ipairs(categoryOrder) do
+    category.order = index
+    routeCategories[category.key] = category
+end
+local otherCategory = { order = #categoryOrder + 1, label = "Other Secrets", icon = "INV_Misc_QuestionMark" }
+local gold = { 0.96, 0.78, 0.43 }
+local muted = { 0.73, 0.67, 0.55 }
+local finishedColor = { 0.68, 0.76, 0.48 }
 local navigationMessages = {
     delegated = "Waypoint sent to the external arrow.",
     unavailable = "External arrow unavailable. Using your HUD preference.",
@@ -35,13 +44,52 @@ local function label(parent, font, x, y, width, height)
     return text
 end
 
+local function surface(frame, layer, red, green, blue, alpha)
+    local texture = frame:CreateTexture(nil, layer)
+    texture:SetAllPoints()
+    texture:SetColorTexture(red, green, blue, alpha)
+    return texture
+end
+
 local function button(parent, caption, width, x, y, onClick)
-    local control = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    local control = CreateFrame("Button", nil, parent)
     control:SetSize(width, 24)
     control:SetPoint("TOPLEFT", x, y)
+    local edge = surface(control, "BACKGROUND", 0.29, 0.24, 0.16, 1)
+    local fill = control:CreateTexture(nil, "BORDER")
+    fill:SetPoint("TOPLEFT", edge, "TOPLEFT", 1, -1)
+    fill:SetPoint("BOTTOMRIGHT", edge, "BOTTOMRIGHT", -1, 1)
+    fill:SetColorTexture(0.14, 0.12, 0.09, 1)
+    control:SetHighlightTexture(surface(control, "HIGHLIGHT", 0.74, 0.52, 0.25, 0.24))
+    local text = label(control, "GameFontNormalSmall", 2, 0, width - 4, 24)
+    text:SetJustifyH("CENTER")
+    text:SetJustifyV("MIDDLE")
+    control:SetFontString(text)
+    control:SetNormalFontObject(GameFontNormalSmall)
+    control:SetDisabledFontObject(GameFontDisableSmall)
     control:SetText(caption)
     control:SetScript("OnClick", onClick)
     return control
+end
+
+local function routeRow(parent, route, y, onClick)
+    local row = CreateFrame("Button", nil, parent)
+    row:SetSize(388, 24)
+    row:SetPoint("TOPLEFT", 18, y)
+    row.fill = surface(row, "BACKGROUND", 0.14, 0.12, 0.09, 1)
+    row:SetHighlightTexture(surface(row, "HIGHLIGHT", 0.74, 0.52, 0.25, 0.28))
+    row:SetScript("OnClick", onClick)
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(18, 18)
+    icon:SetPoint("LEFT", 6, 0)
+    icon:SetTexture("Interface\\Icons\\" .. (routeCategories[route.category] or otherCategory).icon)
+    row.title = label(row, "GameFontNormal", 32, 0, 244, 24)
+    row.title:SetJustifyV("MIDDLE")
+    row.title:SetText(route.title)
+    row.action = label(row, "GameFontHighlightSmall", 282, 0, 98, 24)
+    row.action:SetJustifyH("RIGHT")
+    row.action:SetJustifyV("MIDDLE")
+    return row
 end
 
 local function waypointZone(waypoint)
@@ -123,7 +171,7 @@ local function paginateRoutes(routes, screenHeight)
         end
     end
 
-    local naturalHeight = math.max(journalHeight, routeFrameHeight + contentHeight)
+    local naturalHeight = routeFrameHeight + math.max(routeHeadingHeight + routeRowHeight, contentHeight)
     local availableHeight = screenHeight - routePageInset
     local maxHeight = contentHeight
     if #routes > 1 and screenHeight > 0 and naturalHeight > availableHeight then
@@ -158,7 +206,7 @@ local function paginateRoutes(routes, screenHeight)
     return pages, height
 end
 
-local function makePanel(api, changePage)
+local function makePanel(api, changePage, changeFilter)
     local panel = CreateFrame("Frame", panelName, UIParent, "PortraitFrameTemplate")
     panel:SetSize(424, journalHeight)
     panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 34, -126)
@@ -188,7 +236,7 @@ local function makePanel(api, changePage)
     local inset = panel:CreateTexture(nil, "BACKGROUND", nil, 2)
     inset:SetPoint("TOPLEFT", insetEdge, "TOPLEFT", 1, -1)
     inset:SetPoint("BOTTOMRIGHT", insetEdge, "BOTTOMRIGHT", -1, 1)
-    inset:SetColorTexture(0.077, 0.070, 0.060, 1)
+    inset:SetColorTexture(0.067, 0.056, 0.042, 1)
 
     local drag = CreateFrame("Frame", nil, panel)
     drag:SetPoint("TOPLEFT", 65, -2)
@@ -260,6 +308,72 @@ local function makePanel(api, changePage)
         controls.close:SetPoint("TOPRIGHT", -4, -3)
     end
     controls.close:SetScript("OnClick", function() panel:Hide() end)
+
+    local search = CreateFrame("EditBox", nil, body)
+    controls.routeSearch = search
+    search:SetSize(225, 24)
+    search:SetPoint("TOPLEFT", 18, -148)
+    search:EnableMouse(true)
+    search:SetAutoFocus(false)
+    search:SetMaxLetters(64)
+    search:SetFontObject(GameFontHighlightSmall)
+    search:SetTextInsets(8, 8, 0, 0)
+    local searchEdge = surface(search, "BACKGROUND", 0.29, 0.24, 0.16, 1)
+    local searchFill = search:CreateTexture(nil, "BORDER")
+    searchFill:SetPoint("TOPLEFT", searchEdge, "TOPLEFT", 1, -1)
+    searchFill:SetPoint("BOTTOMRIGHT", searchEdge, "BOTTOMRIGHT", -1, 1)
+    searchFill:SetColorTexture(0.049, 0.042, 0.032, 1)
+    local searchPrompt = label(search, "GameFontHighlightSmall", 8, 0, 205, 24)
+    searchPrompt:SetJustifyV("MIDDLE")
+    searchPrompt:SetTextColor(unpack(muted))
+    searchPrompt:SetText("Search secrets")
+    search:SetScript("OnEditFocusGained", function() searchPrompt:Hide() end)
+    search:SetScript("OnEditFocusLost", function(self) searchPrompt:SetShown(self:GetText() == "") end)
+
+    local menu = CreateFrame("Frame", nil, body)
+    controls.routeCategoryMenu = menu
+    controls.routeCategoryOptions = {}
+    menu:SetSize(154, 4 + 24 * (#categoryOrder + 1))
+    menu:SetPoint("TOPLEFT", 252, -174)
+    menu:SetFrameLevel(body:GetFrameLevel() + 10)
+    menu:EnableMouse(true)
+    surface(menu, "BACKGROUND", 0.09, 0.075, 0.057, 1)
+    menu:Hide()
+
+    controls.routeCategory = button(body, "All Types  ▾", 154, 252, -148, function()
+        search:ClearFocus()
+        menu:SetShown(not menu:IsShown())
+    end)
+    local function addCategoryOption(key, caption, index)
+        controls.routeCategoryOptions[key] = button(menu, caption, 150, 2, -2 - index * 24, function()
+            controls.routeCategory:SetText(caption .. "  ▾")
+            menu:Hide()
+            changeFilter(search:GetText(), key)
+        end)
+    end
+    addCategoryOption("all", "All Types", 0)
+    for index, category in ipairs(categoryOrder) do
+        addCategoryOption(category.key, category.label, index)
+    end
+
+    search:SetText("")
+    search:SetScript("OnTextChanged", function(self)
+        menu:Hide()
+        searchPrompt:SetShown(self:GetText() == "" and not self:HasFocus())
+        changeFilter(self:GetText())
+    end)
+    search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    search:SetScript("OnEscapePressed", function(self)
+        self:SetText("")
+        self:ClearFocus()
+    end)
+    controls.routeEmpty = label(body, "GameFontHighlight", 18, -routeListTop, 388, 40)
+    controls.routeEmpty:SetTextColor(unpack(muted))
+
+    local listRule = body:CreateTexture(nil, "ARTWORK")
+    listRule:SetHeight(1)
+    listRule:SetColorTexture(0.29, 0.24, 0.16, 1)
+    controls.routeRule = listRule
     if type(UISpecialFrames) == "table" then
         table.insert(UISpecialFrames, panelName)
     end
@@ -378,6 +492,8 @@ local function makePanel(api, changePage)
 
     local function onHide()
         stopMoving()
+        search:ClearFocus()
+        menu:Hide()
         panel.resetJump()
         panel.resetMapCommand()
     end
@@ -406,6 +522,7 @@ function namespace.CreateSecretsUI(api)
     local ui = {}
     local panel, finished
     local page = 1
+    local query, categoryFilter = "", "all"
 
     function ui:Refresh()
         if not panel then
@@ -454,27 +571,48 @@ function namespace.CreateSecretsUI(api)
         for _, heading in pairs(controls.routeHeadings) do
             heading:Hide()
         end
-        local routes = not tracking and api.getRoutes()
+        controls.routeSearch:SetShown(not tracking)
+        controls.routeCategory:SetShown(not tracking)
+        controls.routeRule:SetShown(not tracking)
+        controls.routeEmpty:Hide()
         local height, paging, pageCount = journalHeight, false, 1
-        if routes then
-            if #routes == 0 then
-                panel.note:SetText("Built-in routes need your character's Alliance or Horde faction.")
+        if tracking then
+            controls.routeSearch:ClearFocus()
+            controls.routeCategoryMenu:Hide()
+        else
+            local routes = api.getRoutes()
+            local filtered, finishedCount = {}, 0
+            for _, choice in ipairs(routes) do
+                if api.hasFinished(choice) then
+                    finishedCount = finishedCount + 1
+                end
+                if (categoryFilter == "all" or choice.category == categoryFilter)
+                    and choice.title:lower():find(query, 1, true) then
+                    filtered[#filtered + 1] = choice
+                end
             end
-            local pages, layoutHeight = paginateRoutes(routes, UIParent:GetHeight())
+            if #routes > 0 then
+                panel.progress:SetText(("%d of %d Built-In Routes Finished"):format(finishedCount, #routes))
+            end
+            if #filtered == 0 then
+                controls.routeEmpty:SetText(#routes == 0
+                    and "Built-in routes need your character's Alliance or Horde faction."
+                    or "No secrets match your search or category.")
+                controls.routeEmpty:Show()
+            end
+            local pages, layoutHeight = paginateRoutes(filtered, UIParent:GetHeight())
             height, pageCount = layoutHeight, #pages
             paging = pageCount > 1
             page = math.min(page, pageCount)
             local visible = pages[page]
             if paging then
-                controls.routePageRange:SetText(("%d–%d of %d"):format(visible.first, visible.last, #routes))
+                controls.routePageRange:SetText(("%d–%d of %d"):format(visible.first, visible.last, #filtered))
             end
-            local finishedCount = 0
-            for _, choice in ipairs(routes) do
-                if api.hasFinished(choice) then
-                    finishedCount = finishedCount + 1
-                end
-            end
-            for _, entry in ipairs(visible.rows) do
+            local ruleY = paging and 83 or 45
+            controls.routeRule:ClearAllPoints()
+            controls.routeRule:SetPoint("BOTTOMLEFT", 18, ruleY)
+            controls.routeRule:SetPoint("BOTTOMRIGHT", -18, ruleY)
+            for rowIndex, entry in ipairs(visible.rows) do
                 local choice = entry.route
                 local id = choice.id
                 local position = -entry.position
@@ -483,7 +621,8 @@ function namespace.CreateSecretsUI(api)
                     local heading = controls.routeHeadings[category.label]
                     if not heading then
                         heading = label(panel.body, "GameFontNormal", 18, position, 388, 18)
-                        heading:SetText(category.label)
+                        heading:SetText(category.label:upper())
+                        heading:SetTextColor(unpack(gold))
                         controls.routeHeadings[category.label] = heading
                     else
                         heading:ClearAllPoints()
@@ -494,22 +633,20 @@ function namespace.CreateSecretsUI(api)
                 end
                 local row = controls.routes[id]
                 if not row then
-                    row = button(panel.body, "", 388, 18, position, function() api.start(id) end)
+                    row = routeRow(panel.body, choice, position, function() api.start(id) end)
                     controls.routes[id] = row
                 else
                     row:ClearAllPoints()
                     row:SetPoint("TOPLEFT", 18, position)
                 end
                 local resumeStep = api.getResumeStep(choice)
-                if resumeStep then
-                    row:SetText(("Resume %s (Step %d)"):format(choice.title, resumeStep))
-                else
-                    row:SetText((api.hasFinished(choice) and "Replay " or "Track ") .. choice.title)
-                end
+                local complete = api.hasFinished(choice)
+                local shade = rowIndex % 2 == 0 and 0.011 or 0
+                row.fill:SetColorTexture(0.13 + shade, 0.11 + shade, 0.085 + shade, 1)
+                row.title:SetTextColor(unpack(complete and not resumeStep and muted or gold))
+                row.action:SetTextColor(unpack(complete and not resumeStep and finishedColor or muted))
+                row.action:SetText(resumeStep and ("Resume · Step %d"):format(resumeStep) or (complete and "Replay" or "Track"))
                 row:Show()
-            end
-            if #routes > 0 then
-                panel.progress:SetText(("%d of %d Built-In Routes Finished"):format(finishedCount, #routes))
             end
         end
         controls.routePagePrevious:SetShown(paging)
@@ -550,7 +687,7 @@ function namespace.CreateSecretsUI(api)
         controls.revealDistance:SetEnabled(reveal ~= "distance")
         controls.revealCoordinates:SetEnabled(reveal ~= "coordinates")
         controls.revealFull:SetEnabled(reveal ~= "full")
-        panel.noteScroll:SetShown(tracking or #routes == 0)
+        panel.noteScroll:SetShown(tracking)
         local noteHeight = math.ceil(panel.note:GetStringHeight())
         local notesOverflow = noteHeight > panel.noteScroll:GetHeight()
         panel.noteBody:SetHeight(math.max(noteHeight, panel.noteScroll:GetHeight()))
@@ -590,10 +727,16 @@ function namespace.CreateSecretsUI(api)
             panel = makePanel(api, function(delta)
                 page = math.max(1, page + delta)
                 self:Refresh()
+            end, function(text, category)
+                query = (text or ""):match("^%s*(.-)%s*$"):lower()
+                categoryFilter = category or categoryFilter
+                page = 1
+                self:Refresh()
             end)
             panel:RegisterEvent("DISPLAY_SIZE_CHANGED")
             panel:RegisterEvent("UI_SCALE_CHANGED")
             panel:SetScript("OnEvent", function()
+                panel.controls.routeCategoryMenu:Hide()
                 if panel:IsShown() and not api.getRoute() then
                     self:Refresh()
                 end

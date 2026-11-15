@@ -1,10 +1,10 @@
 local addonName, namespace = ...
 
 local panelName = "SecretsCompassSettings"
-local previewDark = { 0.055, 0.063, 0.066 }
-local panelDark = { 0.102, 0.112, 0.115 }
-local panelBorder = { 0.40, 0.34, 0.23 }
-local textMuted = { 0.74, 0.77, 0.76 }
+local previewDark = { 0.063, 0.055, 0.047 }
+local panelDark = { 0.094, 0.078, 0.059 }
+local panelBorder = { 0.35, 0.29, 0.20 }
+local textMuted = { 0.74, 0.69, 0.61 }
 local previewHalfWidth = 115
 local previewBaseline = 6
 local previewScale = previewHalfWidth / 280
