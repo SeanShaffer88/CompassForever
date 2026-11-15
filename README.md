@@ -1,6 +1,6 @@
 # SecretsCompass
 
-SecretsCompass leads you through WoW: Forever secrets one step at a time. Follow the built-in Cozy Sleeping Bag and Alcaz Operative Insignia routes, or select a guide in SecretChecklist.
+SecretsCompass leads you through WoW: Forever secrets one step at a time. Choose from twenty-two Alliance or twenty-one Horde built-in routes, including the Manual Scavenger Hunt and the known Dawn Waker steps, or select a guide in SecretChecklist.
 
 - [Install and use SecretsCompass](SecretsCompass/README.md)
 - [Preview the 12 HUD styles](CompassForever-Styles-Mockup.png)

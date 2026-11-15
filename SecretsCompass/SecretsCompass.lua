@@ -11,7 +11,8 @@ for _, style in ipairs(styles) do
 end
 local activeStyle = styles[1]
 local settings, settingsUI
-local secretTracker, secretsUI
+local secretTracker, secretsUI, secretNavigation
+local navigationMode, navigationStatus
 local secretStep, secretContinent, secretX, secretY
 local secretBearing, secretDistance
 local secretReveal, secretZone, secretBearingAvailable
@@ -684,6 +685,24 @@ local function renderQuests(heading)
     end
 end
 
+local function syncSecretNavigation(retryFailed)
+    if not secretNavigation then
+        return
+    end
+    local step, waypoint = secretTracker:GetCurrentStep()
+    if navigationMode ~= "external" or not step then
+        navigationStatus = secretNavigation:Sync(nil)
+    elseif testTargets then
+        navigationStatus = secretNavigation:Sync(nil) or "test"
+    elseif secretReveal ~= "coordinates" and secretReveal ~= "full" then
+        navigationStatus = secretNavigation:Sync(nil) or "reveal"
+    elseif not waypoint then
+        navigationStatus = secretNavigation:Sync(nil) or "location"
+    else
+        navigationStatus = secretNavigation:Sync(waypoint, retryFailed)
+    end
+end
+
 local secretStatus
 local function updateSecretStatus(heading)
     local available = heading ~= nil and secretBearing ~= nil
@@ -691,6 +710,8 @@ local function updateSecretStatus(heading)
     if secretStep then
         if testTargets then
             status = "Compass paused during the overflow test."
+        elseif navigationStatus == "delegated" then
+            status = "Waypoint sent for this step."
         elseif not settings.enabled or settings.opacity == 0 then
             status = "The HUD is hidden."
         elseif #secretStep.waypoints > 0 then
@@ -868,7 +889,7 @@ local function setMoveMode(enabled)
 end
 
 local function updateVisibility()
-    if settings.enabled or testTargets then
+    if (settings.enabled and navigationStatus ~= "delegated") or testTargets or moveMode then
         if secretStep and not secretContinent then
             resolveSecret()
         end
@@ -880,6 +901,14 @@ local function updateVisibility()
         frame:SetScript("OnUpdate", nil)
         frame:Hide()
         updateSecretStatus()
+    end
+end
+
+local function refreshSecretNavigation(retryFailed)
+    syncSecretNavigation(retryFailed)
+    updateVisibility()
+    if secretsUI then
+        secretsUI:RefreshStatus()
     end
 end
 
@@ -895,6 +924,7 @@ local function setTestCount(count)
     else
         testTargets = nil
     end
+    syncSecretNavigation()
     testLabel:SetShown(testTargets ~= nil)
     moveGuide:SetShown(moveMode and not testTargets or false)
     updateVisibility()
@@ -935,6 +965,7 @@ frame:SetScript("OnHide", function()
 end)
 lockButton:SetScript("OnClick", function()
     setMoveMode(false)
+    updateVisibility()
     refreshSettingsUI()
 end)
 
@@ -944,6 +975,7 @@ local function startOrStopMove()
         updateVisibility()
     end
     setMoveMode(not moveMode)
+    updateVisibility()
     refreshSettingsUI()
 end
 
@@ -951,6 +983,7 @@ local function resetPosition()
     setMoveMode(false)
     settings.x, settings.y = 0, 88
     place()
+    updateVisibility()
     refreshSettingsUI()
 end
 
@@ -1024,10 +1057,21 @@ function SecretsCompassNextStep()
     end
     local route, index = secretTracker:GetRoute()
     if route and index == #route.steps then
-        secretTracker:Finish()
-        secretsUI:ShowFinished()
+        if secretTracker:Finish() then
+            secretsUI:ShowFinished()
+        end
     else
         secretTracker:Step(1)
+    end
+end
+
+local function parseSecretStep(text)
+    if type(text) ~= "string" or not readable(text) or #text > 3 or not text:match("^[0-9]+$") then
+        return
+    end
+    local step = tonumber(text)
+    if step > 0 then
+        return step
     end
 end
 
@@ -1043,13 +1087,19 @@ local function initSecrets()
             return
         end
         resolveSecret()
-        if settings.enabled or testTargets then
-            refresh()
-        else
-            updateSecretStatus()
-        end
+        syncSecretNavigation()
+        updateVisibility()
         if secretsUI then
             secretsUI:Refresh()
+        end
+    end)
+    navigationMode = readable(SecretCompassSecretDB.navigation) and SecretCompassSecretDB.navigation == "external"
+        and "external" or "hud"
+    secretNavigation = ns.CreateWaypointNavigation(function(status)
+        navigationStatus = status
+        updateVisibility()
+        if secretsUI then
+            secretsUI:RefreshStatus()
         end
     end)
     local function standaloneRoutes()
@@ -1069,7 +1119,16 @@ local function initSecrets()
         end,
         status = function() return secretStatus end,
         hasBearing = function() return secretBearingAvailable end,
-        hudHidden = function() return not settings.enabled or settings.opacity == 0 end,
+        hudHidden = function()
+            return navigationStatus ~= "delegated" and (not settings.enabled or settings.opacity == 0)
+        end,
+        navigation = function() return navigationMode, navigationStatus end,
+        refreshNavigation = refreshSecretNavigation,
+        switchNavigation = function()
+            navigationMode = navigationMode == "external" and "hud" or "external"
+            SecretCompassSecretDB.navigation = navigationMode
+            refreshSecretNavigation()
+        end,
         enableHUD = function()
             if settings.opacity == 0 then
                 setPreference("opacity", 1)
@@ -1078,6 +1137,7 @@ local function initSecrets()
         end,
         getRoutes = standaloneRoutes,
         getResumeStep = function(route) return secretTracker:GetResumeStep(route) end,
+        hasFinished = function(route) return secretTracker:HasFinished(route) end,
         start = function(id)
             for _, route in ipairs(standaloneRoutes()) do
                 if route.id == id then
@@ -1087,6 +1147,8 @@ local function initSecrets()
             return false
         end,
         step = function(delta) secretTracker:Step(delta) end,
+        parseStep = parseSecretStep,
+        jump = function(index) return secretTracker:Jump(index) end,
         next = SecretsCompassNextStep,
         stop = function() secretTracker:Stop() end,
         cycle = function() secretTracker:CycleLocation() end,
@@ -1123,10 +1185,22 @@ SlashCmdList.SECRETSCOMPASS = function(message)
         secretsUI:Toggle()
     elseif command == "next" then
         SecretsCompassNextStep()
+    elseif command == "step" or command:match("^step%s") then
+        local route = secretTracker and secretTracker:GetRoute()
+        if route then
+            local step = parseSecretStep(command:match("^step%s+(.+)$"))
+            if step and step <= #route.steps then
+                secretTracker:Jump(step)
+            else
+                print(("SecretsCompass: enter a step from 1 to %d."):format(#route.steps))
+            end
+        else
+            print("SecretsCompass: track a secret before choosing a step.")
+        end
     elseif command == "test" or command:match("^test%s") then
         handleTestCommand(command:match("^test%s*(.*)$"))
     else
-        print("SecretsCompass: /secretscompass toggle, /secretscompass move, /secretscompass reset, /secretscompass test, /secretscompass settings, /secretscompass secrets, /secretscompass next")
+        print("SecretsCompass: /secretscompass toggle, /secretscompass move, /secretscompass reset, /secretscompass test, /secretscompass settings, /secretscompass secrets, /secretscompass next, /secretscompass step N")
     end
 end
 
@@ -1134,9 +1208,15 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:SetScript("OnEvent", function(self, event, loadedAddon)
     if event == "ADDON_LOADED" then
         if loadedAddon ~= addonName then
+            if settings and (loadedAddon == "TomTom" or loadedAddon == "WaypointTracker") then
+                if C_Timer and type(C_Timer.After) == "function" then
+                    C_Timer.After(0, function() refreshSecretNavigation(true) end)
+                else
+                    refreshSecretNavigation(true)
+                end
+            end
             return
         end
-        self:UnregisterEvent("ADDON_LOADED")
         self:RegisterEvent("PLAYER_ENTERING_WORLD")
         self:RegisterEvent("USER_WAYPOINT_UPDATED")
         if questLog then
@@ -1185,11 +1265,17 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
                 testActive = function() return testTargets ~= nil end,
             })
         end
-    elseif (settings.enabled or testTargets) and event == "PLAYER_ENTERING_WORLD" then
-        if secretStep and not secretContinent then
-            resolveSecret()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        local route = secretTracker and secretTracker:GetRoute()
+        if route and route.id == "dawn-waker-eluviana" and #route.steps == 5 and not route.ongoing then
+            for _, candidate in ipairs(ns.StandaloneSecrets()) do
+                if candidate.id == route.id and candidate.sourceURL == route.sourceURL then
+                    secretTracker:Track(candidate)
+                    break
+                end
+            end
         end
-        refresh()
+        refreshSecretNavigation(true)
     elseif (settings.enabled or testTargets) and event == "USER_WAYPOINT_UPDATED" then
         readPin()
         sampleDestinations()

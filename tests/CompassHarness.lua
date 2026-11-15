@@ -16,6 +16,13 @@ end
 
 function methods:SetScript(key, fn) self.scripts[key] = fn end
 function methods:GetScript(key) return self.scripts[key] end
+function methods:HookScript(key, fn)
+    local prior = self.scripts[key]
+    self.scripts[key] = function(...)
+        if prior then prior(...) end
+        fn(...)
+    end
+end
 function methods:RegisterEvent(key) self.events[key] = true end
 function methods:UnregisterEvent(key) self.events[key] = nil end
 function methods:Show() self.shown = true end
@@ -46,7 +53,14 @@ end
 function methods:GetEffectiveScale()
     return (self.scale or 1) * (self.parent and self.parent:GetEffectiveScale() or 1)
 end
-function methods:SetText(text) self.text = text end
+function methods:SetText(text)
+    self.text = text
+    if self.scripts.OnTextChanged then self.scripts.OnTextChanged(self) end
+end
+function methods:SetAutoFocus(enabled) self.autoFocus = enabled end
+function methods:SetFocus() self.focused = true end
+function methods:HighlightText() self.highlighted = true end
+function methods:ClearFocus() self.focused = false end
 function methods:GetText() return self.text end
 function methods:SetStartPoint(...) self.start = { ... } end
 function methods:SetEndPoint(...) self.finish = { ... } end
@@ -119,6 +133,13 @@ UISpecialFrames = {}
 function CreateFrame(_, name, parent, template)
     local frame = region(parent)
     if template == "UICheckButtonTemplate" then frame.Text = frame:CreateFontString() end
+    if template == "PortraitFrameTemplate" then
+        frame.PortraitContainer = { portrait = frame:CreateTexture() }
+        frame.TitleContainer = { TitleText = frame:CreateFontString() }
+        frame.CloseButton = region(frame)
+        frame.SetTitle = function(self, title) self.TitleContainer.TitleText:SetText(title) end
+        frame:SetScript("OnHide", function(self) self.nativeHideRan = true end)
+    end
     frames[#frames + 1] = frame
     if name then _G[name] = frame end
     return frame
@@ -178,6 +199,7 @@ assert(loadfile(addonPath .. "/Styles.lua"))("SecretsCompass", namespace)
 assert(loadfile(addonPath .. "/Settings.lua"))("SecretsCompass", namespace)
 assert(loadfile(addonPath .. "/Secrets.lua"))("SecretsCompass", namespace)
 assert(loadfile(addonPath .. "/SecretsUI.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/WaypointNavigation.lua"))("SecretsCompass", namespace)
 assert(loadfile(addonPath .. "/SecretChecklistBridge.lua"))("SecretsCompass", namespace)
 assert(loadfile(addonPath .. "/SecretsCompass.lua"))("SecretsCompass", namespace)
 local frame = assert(SecretsCompassFrame)
@@ -926,12 +948,460 @@ C_QuestLog.IsQuestFlaggedCompleted = function(id) return completionFlags[id] end
 C_QuestLog.IsOnQuest = function(id) return acceptedQuests[id] end
 fireAddonEvent("PLAYER_LOGIN")
 assert(not SecretsCompassSecretChecklistTrackButton, "Standalone mode has no foreign-addon button")
+UIParent:SetHeight(1080)
 slash("secrets")
 local secrets = assert(SecretsCompassSecrets)
+assert(secrets.TitleContainer.TitleText:GetText() == "SecretsCompass Journal"
+    and secrets.PortraitContainer.portrait.texture:match("MinimapCompass%.tga$")
+    and secrets.controls.close == secrets.CloseButton, "Journal uses its own artwork and the native frame")
 local list = namespace.StandaloneSecrets()
 local cozyButton = assert(secrets.controls.routes[list[1].id])
 local alcazButton = assert(secrets.controls.routes[list[2].id])
 assert(secrets:IsVisible() and cozyButton:IsVisible() and alcazButton:IsVisible())
+do
+    local expected = {
+        ["scarlet-banner"] = { {1417, 622, 545}, {1445, 637, 424}, {1435, 168, 538}, {1420, 826, 338} },
+        ["musical-gustjumper"] = { {2521, 515, 723} },
+        ["night-watchmans-torch"] = { {1431, 287, 333} },
+        ["lyn-the-ignored"] = { {1421, 448, 678}, {1421, 634, 643}, {1416, 85, 593} },
+        ["dawn-waker-eluviana"] = {
+            {2521, 417, 234}, {2521, 476, 719}, {1447, 660, 541}, {2482, 727, 372}, {2521, 583, 245},
+        },
+        ["excitable-slime"] = { {1458, 555, 641}, {1458, 523, 584}, {1458, 509, 534} },
+        ["silver-of-the-waves"] = { {1432, 481, 396}, {1432, 456, 434}, {1432, 489, 543}, {1432, 395, 393} },
+        ["applejack-still"] = { {1429, 418, 672}, {1429, 246, 580}, {1429, 241, 732} },
+        ["whispering-horror-residue"] = { {1420, 129, 657}, {1458, 491, 146} },
+        ["blessing-of-kalimdor"] = {
+            {1413, 608, 134}, {1413, 596, 83}, {1413, 586, 75}, {1413, 612, 345},
+            {1413, 604, 329}, {1413, 606, 306}, {1413, 621, 333},
+        },
+        ["travelers-symbols"] = { {1427, 352, 842} },
+        ["bloody-map"] = { {1417, 745.4, 356.4}, {1437, 531.7, 656.7}, {1437, 515.3, 593.5}, {1437, 478, 563} },
+        ["savory-whimsyfin-delight"] = { {1433, 272, 668}, {1433, 608, 699}, {1433, 619, 706}, {1433, 744, 624} },
+        ["malignant-root"] = { {1437, 190, 520}, {1437, 180, 230}, {1437, 290, 170}, {1437, 562, 405} },
+        ["dwarven-tradeskill-signpost"] = { {1433, 106, 713}, {1433, 102, 712}, {1455, 524, 425} },
+        ["a-taste-of-home"] = { {1416, 185, 657}, {1447, 564, 288} },
+        ["orcish-tradeskill-signpost"] = { {1413, 494, 294}, {1413, 498, 294}, {1454, 628, 444} },
+        ["fizsprockets-notes"] = {
+            {1412, 610, 470}, {1412, 586, 473}, {1412, 590, 464}, {1412, 617, 473}, {1412, 548, 643},
+        },
+        ["condor-hatchling"] = { {1432, 746, 708}, {1432, 777, 749}, {1432, 747, 669} },
+        ["tallstrider-hatchling"] = { {1439, 348, 873}, {1439, 350, 880} },
+        ["baby-crocolisk"] = { {1453, 712, 488}, {1453, 711, 680} },
+        ["bitter-baitling"] = { {1434, 274, 769}, {1434, 267, 763} },
+        ["weevil-k-neevil"] = { {1435, 251, 542}, {1434, 431, 167}, {1417, 310, 263}, {1443, 481, 571} },
+        ["gift-of-galloping"] = { {2548, 783, 520} },
+        ["manual-scavenger-hunt"] = {
+            {1417, 226.9, 241.7}, {1424, 876.1, 479.1}, {1458, 228.6, 361.9},
+            {2548, 265.6, 455.8}, {2548, 267.2, 477.4}, {1419, 451.9, 164.7},
+            {1449, 521.6, 496.4}, {1449, 524.8, 511.0}, {1434, 144.3, 271.5}, {1453, 672.0, 825.3},
+        },
+    }
+    for _, side in ipairs({ "Horde", "Alliance" }) do
+        faction = side
+        slash("secrets")
+        slash("secrets")
+        local choices = namespace.StandaloneSecrets()
+        local isAlliance = side == "Alliance"
+        local expectedCount = isAlliance and 22 or 21
+        assert(#choices == expectedCount
+            and secrets.progress:GetText() == ("0 of %d Built-In Routes Finished"):format(expectedCount),
+            "Faction-specific additions update the journal count")
+        assert(choices[17].id == "condor-hatchling" and choices[18].id == "tallstrider-hatchling"
+            and (not isAlliance or choices[19].id == "baby-crocolisk"), "The existing pet routes keep their slots")
+        local bitter, weevil, gift = choices[expectedCount - 2], choices[expectedCount - 1], choices[expectedCount]
+        assert(bitter.id == "bitter-baitling" and #bitter.steps == 3 and #bitter.steps[1].waypoints == 0
+            and weevil.id == "weevil-k-neevil" and #weevil.steps == 5
+            and gift.id == "gift-of-galloping" and #gift.steps == 1,
+            "Both factions get all three new routes after the existing catalog")
+        local weevilStart, weevilEnd = weevil.steps[1].waypoints[1], weevil.steps[5].waypoints[1]
+        assert(weevilStart.mapID == weevilEnd.mapID and weevilStart.x == weevilEnd.x and weevilStart.y == weevilEnd.y,
+            "The specimen route returns to Amaryllis Webb")
+        assert(choices[11].id == "blessing-of-kalimdor" and choices[12].id == "travelers-symbols",
+            "Both factions keep their existing Barrens and Blackrock routes")
+        local symbols = choices[12]
+        assert(#symbols.steps == 3 and #symbols.steps[1].waypoints == 1
+            and #symbols.steps[2].waypoints == 0 and #symbols.steps[3].waypoints == 0,
+            "Traveler's Symbols has an outdoor approach and written directions inside the dungeon")
+        local whimsyfin = choices[isAlliance and 13 or 14]
+        assert(whimsyfin.id == "savory-whimsyfin-delight" and #whimsyfin.steps == 3
+            and #whimsyfin.steps[1].waypoints == 1 and #whimsyfin.steps[2].waypoints == 3
+            and #whimsyfin.steps[3].waypoints == 0,
+            "Both factions get the recipe, fishing alternatives, and a text-only cooking step")
+        for index = 11, #choices do
+            for _, step in ipairs(choices[index].steps) do
+                assert(not step.completionQuestID, "New routes advance manually")
+            end
+        end
+        if isAlliance then
+            assert(choices[9].id == "silver-of-the-waves" and choices[10].id == "applejack-still"
+                and not secrets.controls.routes["excitable-slime"]:IsVisible()
+                and not secrets.controls.routes["whispering-horror-residue"]:IsVisible()
+                and not secrets.controls.routes["bloody-map"]:IsVisible(),
+                "Alliance receives Silver of the Waves and Applejack Still")
+            local root = choices[14]
+            local signpost = choices[15]
+            local wine = choices[16]
+            assert(root.id == "malignant-root" and #root.steps == 2 and #root.steps[1].waypoints == 3
+                and #root.steps[2].waypoints == 1
+                and signpost.id == "dwarven-tradeskill-signpost" and #signpost.steps == 3
+                and wine.id == "a-taste-of-home" and #wine.steps == 3,
+                "Alliance keeps its route order and receives A Taste of Home")
+            assert(not secrets.controls.routes["orcish-tradeskill-signpost"]:IsVisible()
+                and not secrets.controls.routes["fizsprockets-notes"]:IsVisible(),
+                "Alliance cannot see the new Horde routes")
+        else
+            assert(choices[9].id == "excitable-slime" and choices[10].id == "whispering-horror-residue",
+                "Horde receives Excitable Slime and Whispering Horror Residue")
+            local bloodyMap = choices[13]
+            assert(bloodyMap.id == "bloody-map" and bloodyMap.ongoing and #bloodyMap.steps == 6
+                and #bloodyMap.steps[6].waypoints == 0
+                and bloodyMap.steps[3].waypoints[1].x == bloodyMap.steps[5].waypoints[1].x
+                and bloodyMap.steps[3].waypoints[1].y == bloodyMap.steps[5].waypoints[1].y,
+                "The Horde route returns to the same agent before reaching a text-only checkpoint")
+            assert(choices[15].id == "orcish-tradeskill-signpost" and #choices[15].steps == 3
+                and choices[16].id == "fizsprockets-notes" and #choices[16].steps == 5,
+                "Horde receives the signpost and mine routes after the existing routes")
+        end
+        local lastRow = secrets.controls.routes[choices[expectedCount].id]
+        local _, _, rowY = lastRow:GetPoint()
+        assert(secrets:GetHeight() == (isAlliance and 891 or 861)
+            and not secrets.controls.routePageNext:IsVisible()
+            and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
+            "The last route row fits above navigation")
+        for i = 3, #choices do
+            local choice = choices[i]
+            assert(choice.sourceURL and secrets.controls.routes[choice.id]:IsVisible(),
+                "Every added route has a source and appears in the standalone journal")
+            for _, point in ipairs(assert(expected[choice.id], "Unexpected built-in route ID")) do
+                local found
+                for _, step in ipairs(choice.steps) do
+                    for _, pin in ipairs(step.waypoints) do
+                        if pin.mapID == point[1] and math.abs(pin.x - point[2] / 1000) < 0.00001
+                            and math.abs(pin.y - point[3] / 1000) < 0.00001 then
+                            found = true
+                        end
+                    end
+                end
+                assert(found, ("Missing source-checked point for %s"):format(choice.title))
+            end
+        end
+        assert(#choices[3].steps[5].waypoints == 0 and #choices[6].steps[4].waypoints == 0,
+            "Interior puzzle and summon steps have landmark instructions")
+        assert(#choices[5].steps[1].waypoints == 9 and #choices[7].steps[4].waypoints == 5,
+            "Spawn alternatives stay in the same step")
+        local manual = choices[8]
+        assert(manual.id == "manual-scavenger-hunt" and manual.ongoing and #manual.steps == 11,
+            "The Manual Scavenger Hunt is an ongoing standalone route for either faction")
+        for index = 1, 5 do
+            assert(manual.steps[index].clue:lower():find("last known", 1, true),
+                "Historical status is visible without spoiling the location")
+            for _, pin in ipairs(manual.steps[index].waypoints) do
+                assert(pin.label:lower():find("last known", 1, true),
+                    "Historical waypoints are labeled Last Known")
+            end
+        end
+        for _, index in ipairs({ 6, 8, 9 }) do
+            assert(#manual.steps[index].waypoints == 0, "Displaced side clues have no active map targets")
+        end
+        assert(#manual.steps[11].waypoints == 0 and manual.steps[11].title == "Unresolved Clues",
+            "Unsolved fragments have no invented waypoint")
+        local dawn = choices[7]
+        local total = isAlliance and 23 or 22
+        assert(dawn.ongoing and #dawn.steps == total
+            and dawn.steps[6].waypoints[1].mapID == (isAlliance and 1439 or 1440),
+            "Dawn Waker follows the appropriate water globe branch")
+        assert(dawn.steps[total - 1].waypoints[1].mapID == 2521
+            and dawn.steps[total].title == "Trail Goes Cold" and #dawn.steps[total].waypoints == 0,
+            "The route reaches the Altairus ritual and ends without an unverified waypoint")
+        local legacy = namespace.CreateSecretTracker({
+            finishedRoutes = { [dawn.id] = { sourceURL = dawn.sourceURL } },
+        }, function() end)
+        assert(not legacy:HasFinished(dawn) and legacy:GetResumeStep(dawn) == 6 and legacy:Track(dawn),
+            "The previous Eluvi'ana finish is a resume point")
+        local _, resume = legacy:GetRoute()
+        assert(resume == 6 and legacy:Jump(total) and not legacy:Finish() and legacy:Stop()
+            and legacy:GetResumeStep(dawn) == total, "Explicit pauses take precedence over legacy chapter progress")
+    end
+    local slime = secrets.controls.routes["excitable-slime"]
+    click(slime)
+    click(secrets.controls.routes["bloody-map"])
+    click(secrets.controls.routes["orcish-tradeskill-signpost"])
+    click(secrets.controls.routes["fizsprockets-notes"])
+    assert(not SecretCompassSecretDB.route, "A stale Horde route row cannot start on Alliance")
+
+    local wine = secrets.controls.routes["a-taste-of-home"]
+    click(wine)
+    assert(secrets.routeTitle:GetText() == "A Taste of Home"
+        and not secrets.controls.mapCommand:IsVisible(), "Alliance can open the Dalaran route with clues only")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1416 18.50 65.70",
+        "The Dalaran bartender waypoint can be copied")
+    click(secrets.controls.next)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1447 56.40 28.80",
+        "Next leads to the Azshara wine search area")
+    click(secrets.controls.next)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1416 18.50 65.70",
+        "The third step returns to the Dalaran bartender")
+    click(secrets.controls.stop)
+
+    click(secrets.controls.routes["blessing-of-kalimdor"])
+    assert(secrets.routeTitle:GetText() == "Blessing of Kalimdor" and not secrets.controls.mapCommand:IsVisible(),
+        "Alliance can start the Barrens hunt with clues only")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1413 59.60 8.30",
+        "Next Location selects an alternate Takk patrol search point")
+    click(secrets.controls.next)
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1413 60.40 32.90",
+        "Next Location selects an alternate Swiftmane patrol search point")
+    click(secrets.controls.stop)
+
+    local silver = secrets.controls.routes["silver-of-the-waves"]
+    click(silver)
+    assert(secrets.routeTitle:GetText() == "Silver of the Waves" and not secrets.controls.mapCommand:IsVisible(),
+        "Alliance can open the toolbox route with clues only")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1432 48.10 39.60",
+        "The first toolbox search site can be copied")
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1432 45.60 43.40",
+        "Next Location cycles to another toolbox search site")
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1432 48.90 54.30",
+        "Next Location reaches the southern toolbox site")
+    click(secrets.controls.next)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1432 39.50 39.30",
+        "Next advances from toolbox search sites to Khara Deepwater")
+    click(secrets.controls.stop)
+
+    faction = "Horde"
+    slash("secrets")
+    slash("secrets")
+    local applejack = secrets.controls.routes["applejack-still"]
+    local root = secrets.controls.routes["malignant-root"]
+    local signpost = secrets.controls.routes["dwarven-tradeskill-signpost"]
+    assert(not applejack:IsVisible() and not silver:IsVisible()
+        and not root:IsVisible() and not signpost:IsVisible() and not wine:IsVisible(),
+        "Alliance rows are hidden on Horde")
+    click(applejack)
+    click(root)
+    click(signpost)
+    click(wine)
+    assert(not SecretCompassSecretDB.route, "A stale Alliance route row cannot start on Horde")
+
+    click(secrets.controls.routes["fizsprockets-notes"])
+    assert(secrets.routeTitle:GetText() == "Fizsprocket's Notes"
+        and not secrets.controls.mapCommand:IsVisible(), "Horde can open the mine route with clues only")
+    click(secrets.controls.revealFull)
+    slash("step 3")
+    assert(secrets.stepTitle:GetText() == "Find One \"Gerenzo\", of Stonetalon",
+        "Full mode names the document at the selected mine stop")
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1412 59.00 46.40",
+        "The selected mine waypoint can be copied")
+    click(secrets.controls.stop)
+
+    click(secrets.controls.routes["savory-whimsyfin-delight"])
+    assert(secrets.routeTitle:GetText() == "Savory Whimsyfin Delight" and not secrets.controls.mapCommand:IsVisible(),
+        "Horde can open the recipe route with clues only")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.next)
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1433 61.90 70.60",
+        "Next Location selects an alternate Whimsyfin fishing area")
+    click(secrets.controls.next)
+    assert(secrets.progress:GetText() == "Step 3 of 3"
+        and not secrets.controls.location:IsVisible() and not secrets.controls.mapCommand:IsVisible(),
+        "The cooking step clears waypoint controls")
+    click(secrets.controls.stop)
+
+    click(slime)
+    assert(secrets.routeTitle:GetText() == "Excitable Slime" and not secrets.controls.mapCommand:IsVisible(),
+        "Horde can open the standalone route with clues only")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1458 55.50 64.10",
+        "The Boyle pin can be copied")
+    click(secrets.controls.next)
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1458 50.90 53.40",
+        "Next Location cycles the canal search areas")
+    click(secrets.controls.stop)
+
+    click(secrets.controls.routes["bloody-map"])
+    click(secrets.controls.revealCoordinates)
+    slash("step 4")
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1437 47.80 56.30",
+        "The Horde route copies the approximate excavation portal")
+    slash("step 6")
+    click(secrets.controls.revealFull)
+    slash("next")
+    assert(secrets.stepTitle:GetText() == "Unresolved Destination"
+        and secrets.controls.next:GetText() == "Known End" and not secrets.controls.next.enabled
+        and not secrets.controls.mapCommand:IsVisible() and SecretCompassSecretDB.index == 6
+        and not SecretCompassSecretDB.finishedRoutes["bloody-map"],
+        "The unresolved map destination has no waypoint or finish action")
+    click(secrets.controls.stop)
+
+    local manual = secrets.controls.routes["manual-scavenger-hunt"]
+    click(manual)
+    assert(secrets.routeTitle:GetText() == "Manual Scavenger Hunt" and not secrets.controls.mapCommand:IsVisible())
+    slash("step 3")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 2548 26.56 45.58",
+        "Riverglades uses the replacement location instead of Blackrock")
+    slash("step 7")
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1434 14.43 27.15",
+        "Stranglethorn maps the observed torch at the old cache location")
+    slash("step 8")
+    assert(not secrets.controls.mapCommand:IsVisible(), "The missing Alterac stash is a text-only lead")
+    slash("step 11")
+    click(secrets.controls.revealFull)
+    slash("next")
+    assert(secrets.stepTitle:GetText() == "Unresolved Clues" and not secrets.controls.next.enabled
+        and SecretCompassSecretDB.index == 11 and not SecretCompassSecretDB.finishedRoutes["manual-scavenger-hunt"],
+        "The unresolved checkpoint preserves the active route")
+    click(secrets.controls.stop)
+
+    local torch = secrets.controls.routes["night-watchmans-torch"]
+    click(torch)
+    assert(SecretCompassSecretDB.index == 1 and secrets.controls.location:IsVisible()
+        and not secrets.controls.mapCommand:IsVisible(), "Clue mode keeps spawn coordinates private")
+    click(secrets.controls.revealCoordinates)
+    for i = 1, 3 do click(secrets.controls.location) end
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1431 28.70 33.30",
+        "The additional Wowhead search spot is reachable from the journal")
+    click(secrets.controls.stop)
+    click(torch)
+    assert(SecretCompassSecretDB.index == 1 and SecretCompassSecretDB.locationIndex == 4,
+        "Resuming a standalone route keeps the selected spawn alternative")
+    click(secrets.controls.stop)
+
+    local dawn = secrets.controls.routes["dawn-waker-eluviana"]
+    click(dawn)
+    slash("step 4")
+    click(secrets.controls.location)
+    local active = SecretCompassSecretDB.route
+    active.ongoing, active.legacyResumeStep = nil, nil
+    active.title = "Dawn Waker: Eluvi'ana"
+    for index = #active.steps, 6, -1 do active.steps[index] = nil end
+    fireAddonEvent("PLAYER_ENTERING_WORLD")
+    assert(#SecretCompassSecretDB.route.steps == 22 and SecretCompassSecretDB.index == 4
+        and SecretCompassSecretDB.locationIndex == 2, "Entering world upgrades the active route snapshot in place")
+    slash("step 22")
+    assert(secrets.controls.next.enabled == false and secrets.controls.next:GetText() == "Known End"
+        and not secrets.controls.mapCommand:IsVisible(), "The cold trail offers no further action or map pin")
+    slash("next")
+    click(secrets.controls.revealFull)
+    assert(SecretCompassSecretDB.index == 22 and secrets.stepTitle:GetText() == "Trail Goes Cold"
+        and not SecretCompassSecretDB.finishedRoutes["dawn-waker-eluviana"],
+        "The Next binding cannot finish the ongoing route")
+    click(secrets.controls.stop)
+end
+do
+    local controls = secrets.controls
+    local previousPage, nextPage, range = controls.routePagePrevious, controls.routePageNext, controls.routePageRange
+    local choices = namespace.StandaloneSecrets()
+    local lateRoute = choices[#choices]
+    local function assertPage(first, last, height)
+        assert(secrets:GetHeight() == height and previousPage:IsVisible() and nextPage:IsVisible() and range:IsVisible(),
+            "Only an overflowing catalog shows the pager")
+        assert(range:GetText() == ("%d–%d of %d"):format(first, last, #choices),
+            "The pager shows the displayed route range")
+        assert(previousPage.enabled == (first > 1) and nextPage.enabled == (last < #choices),
+            "Page controls stop at the first and last pages")
+        for index, route in ipairs(choices) do
+            assert(controls.routes[route.id]:IsVisible() == (index >= first and index <= last),
+                "Only rows on the current page are visible")
+        end
+        local lastRow = controls.routes[choices[last].id]
+        local _, _, rowY = lastRow:GetPoint()
+        local _, _, pagerY = nextPage:GetPoint()
+        assert(26 - rowY + lastRow:GetHeight() <= height - pagerY - nextPage:GetHeight(),
+            "Route rows clear the pager")
+    end
+
+    SecretCompassSecretDB.finishedRoutes[lateRoute.id] = { sourceURL = lateRoute.sourceURL }
+    UIParent:SetHeight(720)
+    fireAddonEvent("DISPLAY_SIZE_CHANGED")
+    assertPage(1, 14, 681)
+    assert(secrets.progress:GetText() == "1 of 21 Built-In Routes Finished",
+        "Completion includes finished routes off the current page")
+    SecretCompassSecretDB.finishedRoutes[lateRoute.id] = nil
+    click(nextPage)
+    assertPage(15, 21, 681)
+    local condor = controls.routes["condor-hatchling"]
+    click(condor)
+    assert(secrets.routeTitle:GetText() == "Condor Hatchling" and not range:IsVisible()
+        and not previousPage:IsVisible() and not nextPage:IsVisible() and not condor:IsVisible(),
+        "Tracking a route from a later page hides the catalog and pager")
+    click(controls.revealCoordinates)
+    click(controls.location)
+    click(controls.mapCommand)
+    assert(controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90",
+        "Next Location reaches an alternate Lord Condar search area")
+    click(controls.stop)
+    assertPage(15, 21, 681)
+
+    click(controls.routes["bitter-baitling"])
+    click(controls.revealCoordinates)
+    assert(secrets.progress:GetText():match("^Step 1") and not controls.mapCommand:IsVisible(),
+        "The contest fishing step gives instructions without a fixed waypoint")
+    click(controls.next)
+    click(controls.mapCommand)
+    assert(controls.mapCommandInput:GetText() == "/mappin 1434 27.40 76.90",
+        "Next leads to Riggle Bassbait for the contest turn-in")
+    click(controls.next)
+    click(controls.mapCommand)
+    assert(controls.mapCommandInput:GetText() == "/mappin 1434 26.70 76.30",
+        "The final step leads to Jang for the prize exchange")
+    click(controls.stop)
+    assertPage(15, 21, 681)
+    click(previousPage)
+    assertPage(1, 14, 681)
+
+    faction = "Alliance"
+    choices = namespace.StandaloneSecrets()
+    UIParent:SetHeight(480)
+    fireAddonEvent("UI_SCALE_CHANGED")
+    assertPage(1, 6, 441)
+    click(nextPage)
+    assertPage(7, 12, 441)
+    click(nextPage)
+    assertPage(13, 18, 441)
+    click(nextPage)
+    assertPage(19, 22, 441)
+    faction = "Horde"
+    choices = namespace.StandaloneSecrets()
+    slash("secrets")
+    slash("secrets")
+    assertPage(19, 21, 441)
+    assert(not controls.routes["baby-crocolisk"]:IsVisible(), "The Alliance route stays hidden on the Horde page")
+    UIParent:SetHeight(720)
+    fireAddonEvent("DISPLAY_SIZE_CHANGED")
+    assertPage(15, 21, 681)
+    UIParent:SetHeight(1080)
+    fireAddonEvent("DISPLAY_SIZE_CHANGED")
+    assert(not range:IsVisible() and cozyButton:IsVisible() and controls.routes[lateRoute.id]:IsVisible(),
+        "A tall viewport restores the full catalog")
+end
 acceptedQuests[79007] = true
 click(cozyButton)
 assert(secrets.routeTitle:GetText() == "Cozy Sleeping Bag" and secrets.progress:GetText():match("^Step 1"))
@@ -976,6 +1446,41 @@ slash("test 64")
 assert(not hunt:IsVisible(), "Overflow test suppresses the compact hunt HUD")
 slash("test off")
 assert(hunt:IsVisible(), "Leaving overflow mode restores the compact hunt HUD")
+local edit, go = assert(secrets.controls.jumpInput), assert(secrets.controls.jumpGo)
+assert(edit:IsVisible() and go:IsVisible() and edit.autoFocus == false and not go.enabled)
+for _, invalid in ipairs({"0", "8", "1e0", "1.0", "-1", "1289", "foo"}) do
+    edit:SetText(invalid)
+    assert(not go.enabled, "Invalid step disables Go: " .. invalid)
+    edit.scripts.OnEnterPressed(edit)
+    assert(SecretCompassSecretDB.index == 1, "Invalid step cannot advance tracking")
+end
+edit:SetText("3")
+edit:SetFocus()
+edit.scripts.OnEscapePressed(edit)
+assert(not edit.focused and SecretCompassSecretDB.index == 1, "Escape clears focus without jumping")
+edit:SetText("3")
+edit:SetFocus()
+assert(go.enabled)
+click(go)
+assert(not edit.focused and SecretCompassSecretDB.index == 3 and secrets.note:GetText() == "",
+    "Go selects the step while honoring Clue mode")
+edit:SetText("4")
+edit:SetFocus()
+edit.scripts.OnEnterPressed(edit)
+assert(not edit.focused and SecretCompassSecretDB.index == 4, "Enter uses the same direct jump")
+slash("step 7")
+assert(SecretCompassSecretDB.index == 7 and secrets.controls.next:GetText() == "Finish",
+    "Jumping to the last step keeps the route active")
+for _, command in ipairs({"step", "step 2.0", "step 2 x", "step 0", "step 1289"}) do
+    slash(command)
+    assert(SecretCompassSecretDB.index == 7, "Invalid slash step leaves the current step alone")
+end
+slash("step 1")
+assert(SecretCompassSecretDB.index == 1)
+edit:SetFocus()
+secrets.scripts.OnHide(secrets)
+assert(not edit.focused, "Panel hide clears input focus")
+
 local starter = SecretCompassSecretDB.route
 assert(starter.steps[1].waypoints[1].mapID == 1413, "Horde begins in the Barrens")
 faction = "Alliance"
@@ -1015,6 +1520,37 @@ click(secrets.controls.suggested)
 assert(SecretCompassSecretDB.index == 2 and alcaz.steps[2].waypoints[1].mapID == 1436)
 click(secrets.controls.revealCoordinates)
 assert(secrets.locationText:GetText():find("43.4, 67.8", 1, true), "Moonbrook location is revealed on request")
+local mapCommand = assert(secrets.controls.mapCommand)
+local mapInput = assert(secrets.controls.mapCommandInput)
+assert(mapCommand:IsVisible() and not mapInput:IsVisible() and not mapInput.focused,
+    "Coordinates expose the action without auto-focusing or showing text")
+local pinBeforeCommand = waypoint
+click(mapCommand)
+assert(mapInput:IsVisible() and mapInput.focused and mapInput.highlighted
+    and mapInput:GetText() == "/mappin 1436 43.40 67.80" and waypoint == pinBeforeCommand,
+    "Map command selects two-decimal text and preserves the map pin")
+mapInput:SetText("edited")
+assert(mapInput:GetText() == "/mappin 1436 43.40 67.80", "The command field retains its generated text")
+SLASH_MAPPIN1 = "/marcar"
+click(mapCommand)
+assert(mapInput:GetText() == "/marcar 1436 43.40 67.80", "The game-provided command alias is honored")
+SLASH_MAPPIN1 = "/marcar other"
+click(mapCommand)
+assert(mapInput:GetText() == "/mappin 1436 43.40 67.80", "Unexpected aliases use the known fallback")
+SLASH_MAPPIN1 = nil
+click(secrets.controls.revealDistance)
+assert(not mapCommand:IsVisible() and not mapInput:IsVisible() and not mapInput.focused
+    and mapInput:GetText() == "", "A spoiler downgrade removes the command")
+click(secrets.controls.revealCoordinates)
+click(mapCommand)
+mapInput.scripts.OnEscapePressed(mapInput)
+assert(not mapInput:IsVisible() and not mapInput.focused and mapInput:GetText() == "",
+    "Escape dismisses the selectable command")
+click(mapCommand)
+secrets.scripts.OnHide(secrets)
+assert(secrets.nativeHideRan, "Journal cleanup preserves the native OnHide script")
+assert(not mapInput:IsVisible() and not mapInput.focused and mapInput:GetText() == "",
+    "Closing the panel clears command text and focus")
 click(secrets.controls.next)
 assert(alcaz.steps[3].waypoints[1].mapID == 1434 and alcaz.steps[3].waypoints[1].y == 0.758)
 assert(alcaz.steps[3].completionQuestID == nil, "Unconfirmed Horde quest flag remains manual")
@@ -1022,9 +1558,16 @@ click(secrets.controls.revealFull)
 assert(secrets.note:GetText():find("Rix Xizzix", 1, true))
 click(secrets.controls.next)
 assert(#alcaz.steps[4].waypoints == 0 and not marker:IsVisible(), "Final assembly has no compass target")
+assert(not mapCommand:IsVisible() and not mapInput:IsVisible(), "Text-only steps have no map command")
+assert(not SecretCompassSecretDB.finishedRoutes[alcaz.id], "Reaching the final step does not mark it finished")
 slash("next")
 assert(SecretCompassSecretDB.route == nil and alcazButton:IsVisible()
-    and alcazButton:GetText():find("Track", 1, true), "Finished routes are offered as a fresh run")
+    and alcazButton:GetText():find("Replay", 1, true), "Finished routes are offered for replay")
+click(alcazButton)
+assert(SecretCompassSecretDB.index == 1, "Replay starts from the first step")
+click(secrets.controls.next)
+click(secrets.controls.stop)
+assert(alcazButton:GetText():find("Resume", 1, true), "A paused replay can resume")
 click(cozyButton)
 assert(SecretCompassSecretDB.index == 2 and SecretCompassSecretDB.route.title == "Cozy Sleeping Bag",
     "Starting a second secret preserves the first secret's checkpoint")
@@ -1092,7 +1635,14 @@ click(secrets.controls.next)
 advance()
 assert(secrets.controls.location:IsVisible() and not marker:IsVisible(),
     "Cross-continent step keeps instructions without an invalid compass bearing")
+click(mapCommand)
+assert(mapInput:GetText() == "/mappin 4 10.00 20.00")
 click(secrets.controls.location)
+assert(not mapInput:IsVisible() and not mapInput.focused and mapInput:GetText() == "",
+    "Cycling a location clears the previous command")
+click(mapCommand)
+assert(mapInput:GetText() == "/mappin 1 25.00 50.00" and waypoint == savedPin,
+    "Command follows the newly selected waypoint")
 advance()
 assert(marker:IsVisible() and SecretCompassSecretDB.locationIndex == 2)
 click(secrets.controls.stop)
@@ -1138,6 +1688,22 @@ click(secrets.controls.previous)
 assert(SecretCompassSecretDB.index == 5, "Optional steps remain manually selectable")
 click(secrets.controls.stop)
 completionFlags[79007], completionFlags[79192] = nil, nil
+
+local longSteps = {}
+for index = 1, 128 do longSteps[index] = {label = "Step " .. index} end
+foreignLink.currentURL = "https://example.com/long-guide"
+SecretChecklist.entries = {{name = "Long Guide", guideURL = foreignLink.currentURL, steps = longSteps}}
+click(trackSecret)
+edit:SetText("1289")
+assert(not go.enabled and SecretCompassSecretDB.index == 1, "Overlong input is never truncated to a valid step")
+edit:SetText("128")
+click(go)
+assert(SecretCompassSecretDB.index == 128 and secrets.controls.next:GetText() == "Finish",
+    "The picker reaches the highest supported step, without finishing")
+click(secrets.controls.stop)
+assert(not edit:IsVisible() and not edit.focused and not go:IsVisible())
+slash("step 2")
+assert(not SecretCompassSecretDB.route, "Slash jump is ignored with no active route")
 
 local state = {}
 local huntTracker = namespace.CreateSecretTracker(state, function() end)
@@ -1210,6 +1776,12 @@ assert(restored:GetResumeStep(changed) == nil, "A changed guide source cannot cl
 local duplicate = {id = route.id, title = route.title, sourceURL = route.sourceURL, steps = {pickStep, pickStep}}
 assert(restored:GetResumeStep(duplicate) == nil, "Duplicate step titles and quest identities are ambiguous")
 assert(restored:Track(moved) and restored:Finish() and restored:GetResumeStep(moved) == nil)
+assert(restored:HasFinished(moved) and not restored:HasFinished(changed),
+    "Completion belongs to the original guide source")
+assert(namespace.CreateSecretTracker(saved, function() end):HasFinished(moved),
+    "Completion survives a new tracker on the same character")
+assert(not namespace.CreateSecretTracker({}, function() end):HasFinished(moved),
+    "Another character does not inherit completion")
 assert(restored:Track(moved))
 local _, replayIndex = restored:GetRoute()
 assert(replayIndex == 1 and restored:GetResumeStep(another) == 2, "Finish resets only the completed route")
@@ -1222,4 +1794,105 @@ local sanitized = namespace.CreateSecretTracker(invalidState, function() end)
 assert(sanitized:GetResumeStep(route) == nil and sanitized:GetResumeStep(another) == nil
     and next(invalidState.checkpoints) == nil, "Malformed saved checkpoints are filtered")
 
-print("SecretsCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, spoiler levels, verified progress, and the SecretChecklist companion")
+do
+    local owned, addCalls, removeCalls = nil, 0, 0
+    local unrelated = { title = "My own pin" }
+    local externalPoints = { [unrelated] = true }
+    local reject, duplicate, lastOptions
+    local provider = {
+        WaypointExists = function() return duplicate == true end,
+        AddWaypoint = function(_, mapID, x, y, options)
+            addCalls = addCalls + 1
+            if reject then return end
+            assert(options.persistent == false and options.silent == true and options.crazy == true
+                and options.from == "SecretsCompass", "Delegated points are temporary, active and attributed")
+            lastOptions = options
+            owned = { mapID = mapID, x = x, y = y }
+            externalPoints[owned] = true
+            return owned
+        end,
+        IsValidWaypoint = function(_, uid) return externalPoints[uid] == true end,
+        RemoveWaypoint = function(_, uid)
+            assert(uid == owned, "Cleanup only removes SecretsCompass's own waypoint")
+            removeCalls = removeCalls + 1
+            externalPoints[uid] = nil
+            owned = nil
+        end,
+    }
+    TomTom = nil
+    click(cozyButton)
+    click(secrets.controls.revealClue)
+    click(secrets.controls.navigation)
+    assert(SecretCompassSecretDB.navigation == "external" and frame:IsVisible(),
+        "External arrow preference saves and falls back to the HUD")
+    click(secrets.controls.revealCoordinates)
+    assert(frame:IsVisible(), "HUD stays active when the external addon is missing")
+    TomTom = provider
+    local queuedLoad
+    local immediate = C_Timer.After
+    C_Timer.After = function(_, callback) queuedLoad = callback end
+    fireAddonEvent("ADDON_LOADED", "WaypointTracker")
+    C_Timer.After = immediate
+    assert(queuedLoad and not owned and addCalls == 0,
+        "Provider handoff waits for other AddOnLoaded listeners to initialize")
+    queuedLoad()
+    local cozyStep = cozy.steps[SecretCompassSecretDB.index].waypoints[1]
+    assert(owned and owned.mapID == cozyStep.mapID and owned.x == cozyStep.x and owned.y == cozyStep.y
+        and not frame:IsVisible() and ForeverCompassDB.enabled,
+        "External navigation hides the HUD without changing the saved HUD preference")
+    assert(not lastOptions.callbacks, "TomTom keeps its native waypoint callbacks")
+    advance()
+    click(secrets.controls.revealFull)
+    assert(addCalls == 1 and removeCalls == 0, "Same-point refreshes keep the original waypoint")
+    click(secrets.controls.revealDistance)
+    assert(not owned and frame:IsVisible() and removeCalls == 1 and addCalls == 1,
+        "Distance mode revokes the external point and restores HUD guidance")
+    duplicate = true
+    click(secrets.controls.revealCoordinates)
+    assert(not owned and frame:IsVisible() and addCalls == 1 and removeCalls == 1,
+        "An existing identical waypoint is never claimed")
+    duplicate = false
+    reject = true
+    click(secrets.controls.revealDistance)
+    click(secrets.controls.revealCoordinates)
+    assert(not owned and frame:IsVisible() and addCalls == 2, "A declined waypoint falls back to the HUD")
+    reject = false
+    fireAddonEvent("PLAYER_ENTERING_WORLD")
+    assert(owned and not frame:IsVisible() and addCalls == 3,
+        "Entering the world retries a waypoint rejected before the provider was ready")
+
+    provider.isWaypointTrackerBridge = true
+    SecretChecklist.entries = {foreignEntry}
+    foreignLink.currentURL = foreignEntry.guideURL
+    click(trackSecret)
+    assert(owned and owned.mapID == 1 and owned.x == 0.30 and not frame:IsVisible(),
+        "An imported SecretChecklist route uses the same external arrow preference")
+    click(secrets.controls.next)
+    assert(owned and owned.mapID == 4 and removeCalls == 3, "Next replaces the previous owned point")
+    click(secrets.controls.location)
+    assert(owned and owned.mapID == 1 and owned.x == 0.25 and removeCalls == 4,
+        "Next Location hands the selected alternative to the external arrow")
+    local later
+    C_Timer.After = function(_, callback) later = callback end
+    lastOptions.callbacks.arrived("arrived", owned)
+    C_Timer.After = immediate
+    externalPoints[owned] = nil
+    owned = nil
+    assert(later, "Arrival is revalidated after Waypoint Tracker finishes auto-clear")
+    local beforeArrivalAdd = addCalls
+    later()
+    assert(frame:IsVisible() and SecretCompassSecretDB.index == 2 and addCalls == beforeArrivalAdd,
+        "An auto-cleared waypoint returns guidance to the HUD without re-adding or advancing")
+    click(secrets.controls.location)
+    assert(owned and owned.mapID == 4, "An intentional new location resumes external guidance")
+    click(secrets.controls.next)
+    assert(not owned and frame:IsVisible() and removeCalls == 5, "Text-only steps clear the external point")
+    click(secrets.controls.next)
+    assert(SecretCompassSecretDB.route == nil and waypoint == savedPin and externalPoints[unrelated],
+        "Finish preserves the player's world map pin and other external waypoints")
+    click(secrets.controls.navigation)
+    assert(SecretCompassSecretDB.navigation == "hud", "The player can switch back to the compass")
+    TomTom = nil
+end
+
+print("SecretsCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, spoiler levels, verified progress, the SecretChecklist companion, and external waypoint navigation")
