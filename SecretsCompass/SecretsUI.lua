@@ -93,7 +93,6 @@ local function makePanel(api)
         end
     end
     drag:SetScript("OnDragStop", stopMoving)
-    panel:SetScript("OnHide", stopMoving)
     label(drag, "GameFontNormalLarge", 18, -11, 350, 22):SetText("SecretsCompass Secrets")
     panel.dragHandle = drag
 
@@ -140,6 +139,48 @@ local function makePanel(api)
     controls.revealFull = button(panel, "Full", 87, 319, -300, function() api.setReveal("full") end)
     controls.suggested = button(panel, "Go to Suggested Step", 176, 18, -331, api.jumpSuggested)
     panel.suggestion = label(panel, "GameFontHighlightSmall", 203, -336, 204, 23)
+
+    controls.jumpLabel = label(panel, "GameFontNormal", 18, -406, 128, 22)
+    local jumpInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    jumpInput:SetSize(70, 24)
+    jumpInput:SetPoint("TOPLEFT", 152, -401)
+    jumpInput:SetAutoFocus(false)
+    controls.jumpInput = jumpInput
+
+    local function jumpCandidate()
+        local route, index = api.getRoute()
+        if not route or route ~= panel.jumpRoute then
+            return
+        end
+        local step = api.parseStep(jumpInput:GetText())
+        if step and step <= #route.steps and step ~= index then
+            return step
+        end
+    end
+
+    local function submitJump()
+        local step = jumpCandidate()
+        jumpInput:ClearFocus()
+        if step then
+            api.jump(step)
+        end
+    end
+
+    controls.jumpGo = button(panel, "Go", 62, 230, -401, submitJump)
+    jumpInput:SetScript("OnTextChanged", function()
+        controls.jumpGo:SetEnabled(jumpCandidate() ~= nil)
+    end)
+    jumpInput:SetScript("OnEnterPressed", submitJump)
+    panel.resetJump = function()
+        jumpInput:ClearFocus()
+        jumpInput:SetText("")
+        controls.jumpGo:SetEnabled(false)
+    end
+    jumpInput:SetScript("OnEscapePressed", panel.resetJump)
+    panel:SetScript("OnHide", function()
+        stopMoving()
+        panel.resetJump()
+    end)
 
     local function nudge(pixels)
         local limit = panel.noteBody:GetHeight() - noteScroll:GetHeight()
@@ -228,6 +269,18 @@ function namespace.CreateSecretsUI(api)
         controls.next:SetShown(tracking)
         controls.stop:SetShown(tracking)
         controls.location:SetShown(tracking and #step.waypoints > 1)
+        local jumpRoute = tracking and #route.steps > 1 and route or nil
+        if panel.jumpRoute ~= jumpRoute or panel.jumpIndex ~= index then
+            panel.jumpRoute, panel.jumpIndex = jumpRoute, index
+            panel.resetJump()
+        end
+        if jumpRoute then
+            controls.jumpLabel:SetText(("Go to Step (1–%d)"):format(#route.steps))
+        end
+        panel:SetHeight(jumpRoute and 435 or 401)
+        controls.jumpLabel:SetShown(jumpRoute ~= nil)
+        controls.jumpInput:SetShown(jumpRoute ~= nil)
+        controls.jumpGo:SetShown(jumpRoute ~= nil)
         controls.revealClue:SetShown(tracking)
         controls.revealDistance:SetShown(tracking)
         controls.revealCoordinates:SetShown(tracking)

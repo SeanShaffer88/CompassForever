@@ -46,7 +46,13 @@ end
 function methods:GetEffectiveScale()
     return (self.scale or 1) * (self.parent and self.parent:GetEffectiveScale() or 1)
 end
-function methods:SetText(text) self.text = text end
+function methods:SetText(text)
+    self.text = text
+    if self.scripts.OnTextChanged then self.scripts.OnTextChanged(self) end
+end
+function methods:SetAutoFocus(enabled) self.autoFocus = enabled end
+function methods:SetFocus() self.focused = true end
+function methods:ClearFocus() self.focused = false end
 function methods:GetText() return self.text end
 function methods:SetStartPoint(...) self.start = { ... } end
 function methods:SetEndPoint(...) self.finish = { ... } end
@@ -976,6 +982,41 @@ slash("test 64")
 assert(not hunt:IsVisible(), "Overflow test suppresses the compact hunt HUD")
 slash("test off")
 assert(hunt:IsVisible(), "Leaving overflow mode restores the compact hunt HUD")
+local edit, go = assert(secrets.controls.jumpInput), assert(secrets.controls.jumpGo)
+assert(edit:IsVisible() and go:IsVisible() and edit.autoFocus == false and not go.enabled)
+for _, invalid in ipairs({"0", "8", "1e0", "1.0", "-1", "1289", "foo"}) do
+    edit:SetText(invalid)
+    assert(not go.enabled, "Invalid step disables Go: " .. invalid)
+    edit.scripts.OnEnterPressed(edit)
+    assert(SecretCompassSecretDB.index == 1, "Invalid step cannot advance tracking")
+end
+edit:SetText("3")
+edit:SetFocus()
+edit.scripts.OnEscapePressed(edit)
+assert(not edit.focused and SecretCompassSecretDB.index == 1, "Escape clears focus without jumping")
+edit:SetText("3")
+edit:SetFocus()
+assert(go.enabled)
+click(go)
+assert(not edit.focused and SecretCompassSecretDB.index == 3 and secrets.note:GetText() == "",
+    "Go selects the step while honoring Clue mode")
+edit:SetText("4")
+edit:SetFocus()
+edit.scripts.OnEnterPressed(edit)
+assert(not edit.focused and SecretCompassSecretDB.index == 4, "Enter uses the same direct jump")
+slash("step 7")
+assert(SecretCompassSecretDB.index == 7 and secrets.controls.next:GetText() == "Finish",
+    "Jumping to the last step keeps the route active")
+for _, command in ipairs({"step", "step 2.0", "step 2 x", "step 0", "step 1289"}) do
+    slash(command)
+    assert(SecretCompassSecretDB.index == 7, "Invalid slash step leaves the current step alone")
+end
+slash("step 1")
+assert(SecretCompassSecretDB.index == 1)
+edit:SetFocus()
+secrets.scripts.OnHide(secrets)
+assert(not edit.focused, "Panel hide clears input focus")
+
 local starter = SecretCompassSecretDB.route
 assert(starter.steps[1].waypoints[1].mapID == 1413, "Horde begins in the Barrens")
 faction = "Alliance"
@@ -1138,6 +1179,22 @@ click(secrets.controls.previous)
 assert(SecretCompassSecretDB.index == 5, "Optional steps remain manually selectable")
 click(secrets.controls.stop)
 completionFlags[79007], completionFlags[79192] = nil, nil
+
+local longSteps = {}
+for index = 1, 128 do longSteps[index] = {label = "Step " .. index} end
+foreignLink.currentURL = "https://example.com/long-guide"
+SecretChecklist.entries = {{name = "Long Guide", guideURL = foreignLink.currentURL, steps = longSteps}}
+click(trackSecret)
+edit:SetText("1289")
+assert(not go.enabled and SecretCompassSecretDB.index == 1, "Overlong input is never truncated to a valid step")
+edit:SetText("128")
+click(go)
+assert(SecretCompassSecretDB.index == 128 and secrets.controls.next:GetText() == "Finish",
+    "The picker reaches the highest supported step, without finishing")
+click(secrets.controls.stop)
+assert(not edit:IsVisible() and not edit.focused and not go:IsVisible())
+slash("step 2")
+assert(not SecretCompassSecretDB.route, "Slash jump is ignored with no active route")
 
 local state = {}
 local huntTracker = namespace.CreateSecretTracker(state, function() end)

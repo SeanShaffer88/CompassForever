@@ -1031,6 +1031,16 @@ function SecretsCompassNextStep()
     end
 end
 
+local function parseSecretStep(text)
+    if type(text) ~= "string" or not readable(text) or #text > 3 or not text:match("^[0-9]+$") then
+        return
+    end
+    local step = tonumber(text)
+    if step > 0 then
+        return step
+    end
+end
+
 local function initSecrets()
     if not ns.CreateSecretTracker or not ns.CreateSecretsUI then
         return
@@ -1087,6 +1097,8 @@ local function initSecrets()
             return false
         end,
         step = function(delta) secretTracker:Step(delta) end,
+        parseStep = parseSecretStep,
+        jump = function(index) return secretTracker:Jump(index) end,
         next = SecretsCompassNextStep,
         stop = function() secretTracker:Stop() end,
         cycle = function() secretTracker:CycleLocation() end,
@@ -1123,10 +1135,22 @@ SlashCmdList.SECRETSCOMPASS = function(message)
         secretsUI:Toggle()
     elseif command == "next" then
         SecretsCompassNextStep()
+    elseif command == "step" or command:match("^step%s") then
+        local route = secretTracker and secretTracker:GetRoute()
+        if route then
+            local step = parseSecretStep(command:match("^step%s+(.+)$"))
+            if step and step <= #route.steps then
+                secretTracker:Jump(step)
+            else
+                print(("SecretsCompass: enter a step from 1 to %d."):format(#route.steps))
+            end
+        else
+            print("SecretsCompass: track a secret before choosing a step.")
+        end
     elseif command == "test" or command:match("^test%s") then
         handleTestCommand(command:match("^test%s*(.*)$"))
     else
-        print("SecretsCompass: /secretscompass toggle, /secretscompass move, /secretscompass reset, /secretscompass test, /secretscompass settings, /secretscompass secrets, /secretscompass next")
+        print("SecretsCompass: /secretscompass toggle, /secretscompass move, /secretscompass reset, /secretscompass test, /secretscompass settings, /secretscompass secrets, /secretscompass next, /secretscompass step N")
     end
 end
 
