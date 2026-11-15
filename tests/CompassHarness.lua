@@ -2090,9 +2090,12 @@ do
 
     local originalOpenWorldMap, originalWorldMapFrame = C_Map.OpenWorldMap, WorldMapFrame
     local mapOpens, shownMap, mapShown, mapOpenMode = {}, nil, false, "confirm"
+    local canvas = region(UIParent)
+    canvas:SetSize(1000, 500)
     WorldMapFrame = {
         IsShown = function() return mapShown end,
         GetMapID = function() return shownMap end,
+        GetCanvas = function() return canvas end,
     }
     local function openWorldMap(mapID)
         mapOpens[#mapOpens + 1] = mapID
@@ -2103,7 +2106,16 @@ do
         end
     end
     C_Map.OpenWorldMap = openWorldMap
-    local function assertShowOnMap(opened, expectedMap)
+    local function assertMapMarker(marker, x, y)
+        local point, relativeTo, relativePoint, offsetX, offsetY = marker:GetPoint()
+        assert(marker:IsVisible() and marker:GetParent() == canvas and not marker.mouseEnabled
+            and #marker.lines == 8 and point == "CENTER" and relativeTo == canvas and relativePoint == "TOPLEFT"
+            and math.abs(offsetX - x * canvas:GetWidth()) < 0.000001
+            and math.abs(offsetY + y * canvas:GetHeight()) < 0.000001,
+            "The outlined, noninteractive marker anchors at the saved fractions on the panning canvas")
+    end
+
+    local function assertShowOnMap(opened, expectedMap, x, y)
         local action = opened.controls.showOnMap
         local reads, sets, clears = getterCalls, setterCalls, clearCalls
         local bookmark, navigation, pin = saved.lastPaused, saved.navigation, waypoint
@@ -2122,6 +2134,13 @@ do
             and getterCalls == reads and setterCalls == sets and clearCalls == clears and waypoint == pin
             and saved.route == nil and saved.lastPaused == bookmark and saved.navigation == navigation,
             "Showing the map does not alter the player pin, journal ownership, or route")
+        local marker = opened.savedMapMarker
+        if x then
+            assertMapMarker(assert(marker), x, y)
+        else
+            assert(not marker or not marker:IsVisible(), "Map opening still works when the marker cannot draw")
+        end
+        return marker
     end
 
     saved.lastPaused = nil
@@ -2154,12 +2173,44 @@ do
         "Closing Copy restores the correct layout when map opening becomes unavailable")
     C_Map.OpenWorldMap = openWorldMap
     journal.controls.routeSearch:SetText("no matching secret")
-    assertShowOnMap(journal, 1432)
+    local marker = assertShowOnMap(journal, 1432, 0.777, 0.749)
+    canvas:SetSize(900, 700)
+    marker.scripts.OnUpdate(marker, 5)
+    assertMapMarker(marker, 0.777, 0.749)
+    marker.scripts.OnUpdate(marker, 9.5)
+    assert(marker:IsVisible(), "The marker remains visible before its lifetime ends")
+    marker.scripts.OnUpdate(marker, 0.5)
+    assert(not marker:IsShown() and not marker.scripts.OnUpdate, "The marker expires and stops updating at 15 seconds")
 
+    assert(assertShowOnMap(journal, 1432, 0.777, 0.749) == marker, "Repeated opens reuse the same marker")
+    shownMap = 1
+    marker.scripts.OnUpdate(marker, 0)
+    assert(not marker:IsShown() and not marker.scripts.OnUpdate, "Changing maps removes the marker on the next update")
+
+    assertShowOnMap(journal, 1432, 0.777, 0.749)
+    canvas:Hide()
+    marker.scripts.OnHide(marker)
+    canvas:Show()
+    assert(not marker:IsShown() and not marker.scripts.OnUpdate, "Closing the canvas removes the marker immediately")
+
+    assertShowOnMap(journal, 1432, 0.777, 0.749)
+    saved.reveals[condor.id] = "distance"
+    journal.controls.routeSearch:SetText("no matching secret")
+    assert(not marker:IsShown() and not marker.scripts.OnUpdate, "A lower reveal level clears the marker on journal refresh")
+    saved.reveals[condor.id] = "coordinates"
+    journal.controls.routeSearch:SetText("no matching secret")
+
+    local getCanvas = WorldMapFrame.GetCanvas
+    WorldMapFrame.GetCanvas = nil
+    assertShowOnMap(journal, 1432)
+    WorldMapFrame.GetCanvas = getCanvas
+
+    assertShowOnMap(journal, 1432, 0.777, 0.749)
     mapOpenMode = "throw"
     click(showOnMap)
-    assert(journal:IsShown() and journal.stepTitle:GetText() == "Could not open the saved map.",
-        "A native map-open error is contained and reported inline")
+    assert(journal:IsShown() and journal.stepTitle:GetText() == "Could not open the saved map."
+        and not marker:IsShown() and not marker.scripts.OnUpdate,
+        "A native map-open error is reported and removes the previous marker")
     mapOpenMode, shownMap, mapShown = "unconfirmed", 1, true
     journal.controls.routeSearch:SetText("no matching secret")
     local originalHint = journal.stepTitle:GetText()
@@ -2192,7 +2243,7 @@ do
     local clear = journal.controls.clearWaypoint
     assert(clear:IsVisible() and journal.controls.continueLast:GetText() == "Continue"
         and getterCalls == 1, "One synchronous update and a matching read enable Clear")
-    assertShowOnMap(journal, 1432)
+    assertShowOnMap(journal, 1432, 0.777, 0.749)
     assertResumeDetails(journal, condor.title, condorSummary)
     local _, setX = journal.controls.setWaypoint:GetPoint()
     local _, clearX = clear:GetPoint()
@@ -2369,7 +2420,13 @@ do
     copyInput = assertCopyWaypoint(journal, "/mappin 4 10.00 20.00")
     assertSetWaypoint(journal, 4, 0.10, 0.20)
     assert(journal.controls.clearWaypoint:IsVisible(), "Imported waypoints can be owned even when the map name is unknown")
-    assertShowOnMap(journal, 4)
+    local importedMarker = assertShowOnMap(journal, 4, 0.10, 0.20)
+    local importedPoint = saved.lastPaused.route.steps[2].waypoints[2]
+    importedPoint.x = 0.1000001
+    journal.controls.routeSearch:SetText("no matching secret")
+    assert(not importedMarker:IsShown() and not importedMarker.scripts.OnUpdate,
+        "A changed saved point clears the marker even if its rounded map command is identical")
+    importedPoint.x = 0.10
     local readsBeforeReload, importedPin = getterCalls, waypoint
     C_Map.GetMapInfo = getMapInfo
     journal = reloadJournal(saved)

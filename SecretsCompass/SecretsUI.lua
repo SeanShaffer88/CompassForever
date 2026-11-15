@@ -195,6 +195,92 @@ local function worldMapShows(mapID)
     return ok and readable(currentMap) and type(currentMap) == "number" and currentMap == mapID
 end
 
+local function hideSavedMapMarker(marker)
+    if marker then
+        marker.selection, marker.waypointSnapshot = nil, nil
+        marker:SetScript("OnUpdate", nil)
+        marker:Hide()
+    end
+end
+
+local function positionSavedMapMarker(marker, waypoint)
+    local canvas = marker:GetParent()
+    local ok, width, height = pcall(function() return canvas:GetWidth(), canvas:GetHeight() end)
+    if not ok or not readable(width) or not readable(height)
+        or type(width) ~= "number" or type(height) ~= "number"
+        or not (width > 0 and width < math.huge and height > 0 and height < math.huge) then
+        return false
+    end
+    if marker.canvasWidth ~= width or marker.canvasHeight ~= height then
+        marker:ClearAllPoints()
+        marker:SetPoint("CENTER", canvas, "TOPLEFT", waypoint.x * width, -waypoint.y * height)
+        marker.canvasWidth, marker.canvasHeight = width, height
+    end
+    return true
+end
+
+local function updateSavedMapMarker(marker, elapsed)
+    marker.remaining = marker.remaining - elapsed
+    local waypoint = marker.waypointSnapshot
+    if marker.remaining <= 0 or marker.map ~= WorldMapFrame or not worldMapShows(waypoint.mapID)
+        or not positionSavedMapMarker(marker, waypoint) then
+        hideSavedMapMarker(marker)
+    end
+end
+
+local function createSavedMapMarker(canvas)
+    local marker = CreateFrame("Frame", nil, canvas)
+    marker:Hide()
+    marker:EnableMouse(false)
+    marker:SetSize(28, 28)
+    local corners = { { 0, 11 }, { 11, 0 }, { 0, -11 }, { -11, 0 } }
+    for _, stroke in ipairs({
+        { "ARTWORK", 5, 0.11, 0.07, 0.15 },
+        { "OVERLAY", 2, 0.85, 0.68, 1 },
+    }) do
+        for i, corner in ipairs(corners) do
+            local nextCorner = corners[i % #corners + 1]
+            local line = marker:CreateLine(nil, stroke[1])
+            line:SetThickness(stroke[2])
+            line:SetColorTexture(stroke[3], stroke[4], stroke[5], 1)
+            line:SetStartPoint("CENTER", marker, corner[1], corner[2])
+            line:SetEndPoint("CENTER", marker, nextCorner[1], nextCorner[2])
+        end
+    end
+    marker:SetScript("OnHide", function(self)
+        self.selection, self.waypointSnapshot = nil, nil
+        self:SetScript("OnUpdate", nil)
+        -- An ancestor may hide the marker while its own shown flag is still set.
+        if self:IsShown() then
+            self:Hide()
+        end
+    end)
+    return marker
+end
+
+local function showSavedMapMarker(panel, selection)
+    local map = WorldMapFrame
+    local canvas = map:GetCanvas()
+    if not readable(canvas) or not canvas or not canvas:IsVisible() then
+        return
+    end
+    local marker = panel.savedMapMarker
+    if not marker then
+        marker = createSavedMapMarker(canvas)
+        panel.savedMapMarker = marker
+    elseif marker:GetParent() ~= canvas then
+        marker:SetParent(canvas)
+    end
+    marker.canvasWidth = nil
+    local waypoint = selection.waypoint
+    if positionSavedMapMarker(marker, waypoint) then
+        marker.waypointSnapshot = { mapID = waypoint.mapID, x = waypoint.x, y = waypoint.y }
+        marker.selection, marker.map, marker.remaining = selection, map, 15
+        marker:Show()
+        marker:SetScript("OnUpdate", updateSavedMapMarker)
+    end
+end
+
 local function normalizedCoordinate(value)
     return readable(value) and type(value) == "number" and value >= 0 and value <= 1
 end
@@ -741,15 +827,20 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
         if not panel:IsShown() or not self:IsShown() then
             return
         end
-        local waypoint = savedWaypoint(api.getLastPausedRoute())
-        if not waypoint or not supportsOpenWorldMap() then
+        hideSavedMapMarker(panel.savedMapMarker)
+        local selection = savedMapCommand(api.getLastPausedRoute())
+        if not selection or not supportsOpenWorldMap() then
             refresh()
             panel.stepTitle:SetText("Saved map unavailable.")
             return
         end
-        if not pcall(C_Map.OpenWorldMap, waypoint.mapID) then
+        local mapID = selection.waypoint.mapID
+        if not pcall(C_Map.OpenWorldMap, mapID) then
             panel.stepTitle:SetText("Could not open the saved map.")
-        elseif worldMapShows(waypoint.mapID) then
+        elseif worldMapShows(mapID) then
+            if not pcall(showSavedMapMarker, panel, selection) then
+                hideSavedMapMarker(panel.savedMapMarker)
+            end
             panel:Hide()
         end
     end)
@@ -859,6 +950,14 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
         end
         local canContinue = pausedRoute ~= nil
         local savedCommand = savedMapCommand(pausedRoute, pausedIndex, pausedLocation, pausedReveal)
+        local marker = panel.savedMapMarker
+        if marker and marker.selection then
+            local savedPoint = savedCommand and savedCommand.waypoint
+            if not sameSavedMapCommand(marker.selection, savedCommand) or marker.waypointSnapshot.mapID ~= savedPoint.mapID
+                or marker.waypointSnapshot.x ~= savedPoint.x or marker.waypointSnapshot.y ~= savedPoint.y then
+                hideSavedMapMarker(marker)
+            end
+        end
         local canCopyWaypoint = savedCommand ~= nil
         local canSetWaypoint = canCopyWaypoint and supportsWorldMapWaypoint()
         local canClearWaypoint = canSetWaypoint and supportsClearWorldMapWaypoint() and ownsSavedWaypoint(panel, savedCommand)
