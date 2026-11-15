@@ -928,9 +928,12 @@ fireAddonEvent("PLAYER_LOGIN")
 assert(not SecretsCompassSecretChecklistTrackButton, "Standalone mode has no foreign-addon button")
 slash("secrets")
 local secrets = assert(SecretsCompassSecrets)
-assert(secrets:IsVisible() and secrets.controls.start:IsVisible())
+local list = namespace.StandaloneSecrets()
+local cozyButton = assert(secrets.controls.routes[list[1].id])
+local alcazButton = assert(secrets.controls.routes[list[2].id])
+assert(secrets:IsVisible() and cozyButton:IsVisible() and alcazButton:IsVisible())
 acceptedQuests[79007] = true
-click(secrets.controls.start)
+click(cozyButton)
 assert(secrets.routeTitle:GetText() == "Cozy Sleeping Bag" and secrets.progress:GetText():match("^Step 1"))
 assert(secrets.controls.enableHUD:IsVisible(), "Tracking from a hidden HUD offers Show HUD")
 click(secrets.controls.enableHUD)
@@ -989,7 +992,39 @@ assert(resumedIndex == 2, "A new tracker resumes saved step")
 click(secrets.controls.previous)
 assert(SecretCompassSecretDB.index == 1)
 click(secrets.controls.stop)
-assert(SecretCompassSecretDB.route == nil and secrets.controls.start:IsVisible())
+assert(SecretCompassSecretDB.route == nil and cozyButton:IsVisible())
+
+completionFlags[96335] = true
+click(alcazButton)
+assert(not cozyButton:IsVisible() and not alcazButton:IsVisible(), "Picker hides during an active route")
+assert(secrets.routeTitle:GetText() == "Alcaz Operative Insignia" and SecretCompassSecretDB.index == 1)
+assert(secrets.stepTitle:GetText():find("alive", 1, true) and secrets.note:GetText() == "",
+    "Opening clue preserves the dungeon quest without exposing the full solution")
+local alcaz = SecretCompassSecretDB.route
+assert(alcaz.steps[1].waypoints[1].mapID == 1445 and alcaz.steps[1].waypoints[1].x == 0.753)
+assert(secrets.controls.suggested:IsVisible(), "Verified prison turn-in suggests Moonbrook")
+click(secrets.controls.suggested)
+assert(SecretCompassSecretDB.index == 2 and alcaz.steps[2].waypoints[1].mapID == 1436)
+click(secrets.controls.revealCoordinates)
+assert(secrets.locationText:GetText():find("43.4, 67.8", 1, true), "Moonbrook location is revealed on request")
+click(secrets.controls.next)
+assert(alcaz.steps[3].waypoints[1].mapID == 1434 and alcaz.steps[3].waypoints[1].y == 0.758)
+assert(alcaz.steps[3].completionQuestID == nil, "Unconfirmed Horde quest flag remains manual")
+click(secrets.controls.revealFull)
+assert(secrets.note:GetText():find("Rix Xizzix", 1, true))
+click(secrets.controls.next)
+assert(#alcaz.steps[4].waypoints == 0 and not marker:IsVisible(), "Final assembly has no compass target")
+slash("next")
+assert(SecretCompassSecretDB.route == nil and alcazButton:IsVisible())
+faction = "Alliance"
+local allianceAlcaz = namespace.StandaloneSecrets()[2]
+assert(allianceAlcaz.steps[3].waypoints[1].mapID == 1453
+    and allianceAlcaz.steps[3].waypoints[1].y == 0.711
+    and allianceAlcaz.steps[3].completionQuestID == 96377)
+click(alcazButton)
+assert(SecretCompassSecretDB.route == nil, "Stale faction-specific rows cannot start a route")
+faction = "Horde"
+completionFlags[96335] = nil
 
 local foreignPanel = CreateFrame("Frame", nil, UIParent)
 local foreignDetailPane = CreateFrame("Frame", nil, foreignPanel)

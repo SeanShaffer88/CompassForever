@@ -1052,9 +1052,8 @@ local function initSecrets()
             secretsUI:Refresh()
         end
     end)
-    local function standaloneRoute()
-        local routes = ns.StandaloneSecrets and ns.StandaloneSecrets()
-        return routes and routes[1]
+    local function standaloneRoutes()
+        return ns.StandaloneSecrets and ns.StandaloneSecrets() or {}
     end
     secretsUI = ns.CreateSecretsUI({
         getRoute = function() return secretTracker:GetRoute() end,
@@ -1077,8 +1076,15 @@ local function initSecrets()
             end
             setPreference("enabled", true)
         end,
-        canStart = function() return standaloneRoute() ~= nil end,
-        start = function() secretTracker:Track(standaloneRoute()) end,
+        getRoutes = standaloneRoutes,
+        start = function(id)
+            for _, route in ipairs(standaloneRoutes()) do
+                if route.id == id then
+                    return secretTracker:Track(route)
+                end
+            end
+            return false
+        end,
         step = function(delta) secretTracker:Step(delta) end,
         next = SecretsCompassNextStep,
         stop = function() secretTracker:Stop() end,

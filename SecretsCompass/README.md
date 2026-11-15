@@ -4,15 +4,15 @@ SecretsCompass is a navigation HUD for World of Warcraft: Forever (Interface 160
 
 ## Follow a Secret
 
-- **Standalone:** Run `/secretscompass secrets` or open **Secrets** in the settings window, then choose **Track Cozy Sleeping Bag**. The first stops follow your character's faction.
+- **Standalone:** Run `/secretscompass secrets` or open **Secrets** in the settings window, then choose **Cozy Sleeping Bag** or **Alcaz Operative Insignia**. Both routes account for your character's faction.
 - **With SecretChecklist:** Open its **Guides** tab, select a guide, and click **Track Secret** beside its Guide button. SecretsCompass reads the selected guide's steps and locations into a local route. The companion button uses the Guides layout in SecretChecklist 2.2.0 for WoW: Forever.
 - Choose **Clue**, **Distance**, **Coordinates**, or **Full** for each secret. **Clue** shows a hint and a rough bearing when available. **Distance** reveals yards, **Coordinates** adds the map location, and **Full** shows the step title and instructions. The choice is saved per secret.
 - Use **Previous**, **Next**, or **Finish** when you complete an instruction. **Next Location** cycles alternatives. When the game can verify earlier quest steps, select the suggested step to jump ahead, or keep navigating manually.
-- If a bearing is unavailable, the destination zone and any available travel hint remain visible. The built-in route has curated access hints. Imported guides use the zone when no travel hint is available.
+- If a bearing is unavailable, the destination zone and any available travel hint remain visible. Built-in routes have curated access hints. Alcaz marks the approximate prison entrance, Moonbrook Inn, and your faction contact. Assembly is a manual step. Imported guides use the zone when no travel hint is available.
 - The compact hunt HUD follows your current step with the guide windows closed. Bind **Next Secret Step** under **Options → Keybindings → AddOns → SecretsCompass**, or run `/secretscompass next`. The action starts unbound.
 - Active progress is saved per character. **Stop** returns to your normal compass. Your existing World Map pin is preserved throughout.
 
-Cozy Sleeping Bag references: [Method walkthrough](https://www.method.gg/wow-forever/how-to-unlock-the-cozy-sleeping-bag-in-wow-forever) and [Wowhead route](https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards). SecretChecklist compatibility is based on its [Forever Guides source](https://github.com/rousseauxy/SecretChecklist/blob/55dfb9eeff47f51a3429dd5047bd73e3c539ef7f/tabs/TabGuides.lua).
+Cozy Sleeping Bag references: [Method walkthrough](https://www.method.gg/wow-forever/how-to-unlock-the-cozy-sleeping-bag-in-wow-forever) and [Wowhead route](https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards). Alcaz route reference is the [WoW Secret Finding walkthrough on Wowhead](https://www.wowhead.com/forever/guide/alcaz-operative-disguise-toy-secret-walkthrough). Coordinates were checked against the [Alcaz entrance guide](https://mobalytics.gg/wow-forever/dungeons/alcaz-prison-complete-dungeon-guide-uncas), the [mapped portal](https://conquestcapped.com/guides/wow-forever/wow-forever-alcaz-prison-guide/), and Forever map pins for [Renzik](https://pd.zroot.it/forever/npcs/6946) and [Rix](https://pd.zroot.it/forever/npcs/214954). SecretChecklist compatibility is based on its [Forever Guides source](https://github.com/rousseauxy/SecretChecklist/blob/55dfb9eeff47f51a3429dd5047bd73e3c539ef7f/tabs/TabGuides.lua).
 
 ## Install and Upgrade
 

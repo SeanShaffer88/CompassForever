@@ -120,7 +120,7 @@ local function makePanel(api)
     panel.status = label(panel, "GameFontHighlightSmall", 18, -270, 272, 30)
     panel.status:SetTextColor(0.74, 0.77, 0.76)
 
-    local controls = {}
+    local controls = { routes = {} }
     panel.controls = controls
     controls.close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
     controls.close:SetPoint("TOPRIGHT", -4, -3)
@@ -129,7 +129,6 @@ local function makePanel(api)
         table.insert(UISpecialFrames, panelName)
     end
 
-    controls.start = button(panel, "Track Cozy Sleeping Bag", 175, 18, -157, api.start)
     controls.previous = button(panel, "Previous", 85, 18, -365, function() api.step(-1) end)
     controls.next = button(panel, "Next", 85, 108, -365, api.next)
     controls.stop = button(panel, "Stop", 70, 198, -365, api.stop)
@@ -195,15 +194,33 @@ function namespace.CreateSecretsUI(api)
             panel.routeTitle:SetText("Choose a Secret")
             panel.progress:SetText("")
             panel.stepTitle:SetText(finished and "Route finished. Choose another secret when you are ready."
-                or "Start the Cozy Sleeping Bag route here, or use Track Secret in SecretChecklist.")
+                or "Choose a built-in route, or use Track Secret in SecretChecklist.")
             panel.note:SetText("")
             controls.suggested:Hide()
             panel.suggestion:SetText("")
         end
-        local canStart = not tracking and api.canStart()
-        controls.start:SetShown(canStart)
-        if not tracking and not canStart then
-            panel.note:SetText("The standalone route needs your character's Alliance or Horde faction.")
+        for _, row in pairs(controls.routes) do
+            row:Hide()
+        end
+        local routes = not tracking and api.getRoutes()
+        if routes then
+            if #routes == 0 then
+                panel.note:SetText("Built-in routes need your character's Alliance or Horde faction.")
+            end
+            for index, choice in ipairs(routes) do
+                local id = choice.id
+                local position = -157 - (index - 1) * 30
+                local row = controls.routes[id]
+                if not row then
+                    row = button(panel, "", 388, 18, position, function() api.start(id) end)
+                    controls.routes[id] = row
+                else
+                    row:ClearAllPoints()
+                    row:SetPoint("TOPLEFT", 18, position)
+                end
+                row:SetText("Track " .. choice.title)
+                row:Show()
+            end
         end
         controls.previous:SetShown(tracking)
         controls.next:SetShown(tracking)
@@ -217,6 +234,7 @@ function namespace.CreateSecretsUI(api)
         controls.revealDistance:SetEnabled(reveal ~= "distance")
         controls.revealCoordinates:SetEnabled(reveal ~= "coordinates")
         controls.revealFull:SetEnabled(reveal ~= "full")
+        panel.noteScroll:SetShown(tracking or #routes == 0)
         local noteHeight = math.ceil(panel.note:GetStringHeight())
         local notesOverflow = noteHeight > panel.noteScroll:GetHeight()
         panel.noteBody:SetHeight(math.max(noteHeight, panel.noteScroll:GetHeight()))

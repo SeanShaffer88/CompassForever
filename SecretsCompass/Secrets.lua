@@ -270,6 +270,42 @@ local function routeStep(title, note, waypoint, clue, completionQuestID, travelH
     }
 end
 
+local function alcazRoute(faction)
+    local alliance = faction == "alliance"
+    local contact = alliance
+        and "Take the Document Box to Renzik \"The Shiv\" at SI:7 in Stormwind's Old Town. Complete State Secrets for one Fractured Insignia."
+        or "Take the Document Box to Rix Xizzix near the auction house in Booty Bay. Complete State Secrets for one Fractured Insignia."
+    return ns.NormalizeSecretRoute({
+        id = "alcaz-operative-insignia:" .. faction,
+        title = "Alcaz Operative Insignia",
+        sourceURL = "https://www.wowhead.com/forever/guide/alcaz-operative-disguise-toy-secret-walkthrough",
+        steps = {
+            routeStep("Free Mason Connery",
+                "Leave the first boss, The Questioner, alive. Find Mason Connery near the end of Alcaz Prison and take "
+                    .. "The Man in the Iron Chains. Backtrack to defeat The Questioner, then bring Mason the key and take More Valuable Than Gold.",
+                { mapID = 1445, x = 0.753, y = 0.141, label = "Approximate Alcaz Prison entrance" },
+                "Leave the first boss alive until you take the prisoner's quest.", 96335,
+                "Alcaz Prison is on Alcaz Island off the coast of Dustwallow Marsh."),
+            routeStep("Recover the Document Box",
+                "Accept More Valuable Than Gold from Mason before leaving the prison. "
+                    .. "Upstairs in the Moonbrook inn, inspect the loose floorboards and turn in the quest "
+                    .. "to get the Document Box. Keep the box for the next step.",
+                { mapID = 1436, x = 0.434, y = 0.678, label = "Moonbrook Inn" },
+                "The note sends you to a place where travellers once stopped for the night.", 96337,
+                "The destination is in Westfall."),
+            routeStep("Deliver the Document Box", contact,
+                alliance and { mapID = 1453, x = 0.783, y = 0.711, label = 'Renzik "The Shiv"' }
+                    or { mapID = 1434, x = 0.285, y = 0.758, label = "Rix Xizzix" },
+                "Someone will recognize the importance of what you found.", alliance and 96377 or nil,
+                alliance and "The contact is in Stormwind City." or "The contact is in Booty Bay, in Stranglethorn Vale."),
+            routeStep("Assemble the Alcaz Operative Insignia",
+                "Gather six Fractured Insignia in total. The pieces are tradeable, so you can obtain the rest from other "
+                    .. "players. Combine all six to create the toy.",
+                nil, "Your reward is one piece of something larger."),
+        },
+    })
+end
+
 function ns.StandaloneSecrets()
     -- Route facts cross-checked against the Forever guides from Method and Wowhead.
     local source = "https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards"
@@ -332,5 +368,5 @@ function ns.StandaloneSecrets()
     return { ns.NormalizeSecretRoute({
         id = "cozy-sleeping-bag:" .. faction,
         title = "Cozy Sleeping Bag", sourceURL = source, steps = steps,
-    }) }
+    }), alcazRoute(faction) }
 end
