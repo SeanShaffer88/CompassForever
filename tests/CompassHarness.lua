@@ -1131,6 +1131,25 @@ do
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     click(nextPage)
     assertPage(12, 21, 683)
+    local status = controls.routeStatus
+    local _, _, statusY = status:GetPoint()
+    local _, _, menuY = controls.routeCategoryMenu:GetPoint()
+    assert(status:IsVisible() and status:GetText() == "Status: All"
+        and statusY - status:GetHeight() > menuY, "The category menu clears the status control")
+    click(controls.routeCategory)
+    click(status)
+    assert(status:GetText() == "Status: Completed" and controls.routeEmpty:IsVisible()
+        and not range:IsVisible() and not controls.routeCategoryMenu:IsVisible()
+        and secrets.progress:GetText() == "0 of 21 Built-In Routes Finished",
+        "Completed shows an empty result at zero progress and closes the type menu")
+    click(status)
+    assert(status:GetText() == "Status: Unfinished")
+    assertPage(1, 11, 683)
+    click(nextPage)
+    click(status)
+    assert(status:GetText() == "Status: All")
+    assertPage(1, 11, 683)
+    click(nextPage)
     click(controls.routeExpandAll)
     assertPage(1, 11, 683)
     local search = controls.routeSearch
@@ -1149,6 +1168,12 @@ do
     click(controls.routeCategory)
     click(controls.routeCategoryOptions.pets)
     assert(slime:IsVisible() and not controls.routeEmpty:IsVisible(), "Changing categories restores a matching route")
+    click(status)
+    assert(not slime:IsVisible() and controls.routeEmpty:IsVisible(), "Completed excludes the unfinished pet")
+    click(status)
+    assert(slime:IsVisible() and not cozyButton:IsVisible()
+        and search:GetText() == "   sLiMe  " and controls.routeCategory:GetText() == "Pets  v",
+        "Status filtering combines with the current title and type")
     local pets = assert(controls.routeHeadings["Pets"])
     local _, _, expandY = controls.routeExpandAll:GetPoint()
     local _, _, petsY = pets:GetPoint()
@@ -1189,12 +1214,15 @@ do
     search:SetFocus()
     click(slime)
     assert(not search:IsVisible() and not search:HasFocus() and not controls.routeCategory:IsVisible()
-        and not controls.routeExpandAll:IsVisible() and not controls.routeCollapseAll:IsVisible(),
+        and not controls.routeExpandAll:IsVisible() and not controls.routeCollapseAll:IsVisible()
+        and not status:IsVisible(),
         "Active routes hide browse controls and release search focus")
     assertNavigationPosition()
     click(controls.stop)
-    assert(search:IsVisible() and search:GetText() == "slime" and slime:IsVisible(),
+    assert(search:IsVisible() and search:GetText() == "slime" and slime:IsVisible()
+        and status:GetText() == "Status: Unfinished",
         "Pausing a route restores the filtered journal")
+    click(status)
     click(controls.routeCategory)
     click(controls.routeCategoryOptions.all)
     search:SetText("")
@@ -1330,6 +1358,8 @@ assert(SecretCompassSecretDB.route == nil and cozyButton:IsVisible()
     and cozyButton.action:GetText():find("Step 2", 1, true), "Pause exposes the saved step in the picker")
 
 completionFlags[96335] = true
+click(secrets.controls.routeStatus)
+click(secrets.controls.routeStatus)
 click(alcazButton)
 assert(not cozyButton:IsVisible() and not alcazButton:IsVisible(), "Picker hides during an active route")
 assert(secrets.routeTitle:GetText() == "Alcaz Operative Insignia" and SecretCompassSecretDB.index == 1)
@@ -1383,13 +1413,23 @@ assert(#alcaz.steps[4].waypoints == 0 and not marker:IsVisible(), "Final assembl
 assert(not mapCommand:IsVisible() and not mapInput:IsVisible(), "Text-only steps have no map command")
 assert(not SecretCompassSecretDB.finishedRoutes[alcaz.id], "Reaching the final step does not mark it finished")
 slash("next")
-assert(SecretCompassSecretDB.route == nil and alcazButton:IsVisible()
-    and alcazButton.action:GetText():find("Replay", 1, true), "Finished routes are offered for replay")
+assert(SecretCompassSecretDB.route == nil and not alcazButton:IsVisible()
+    and secrets.controls.routeStatus:GetText() == "Status: Unfinished"
+    and secrets.progress:GetText() == "1 of 21 Built-In Routes Finished",
+    "Finishing a route removes it from Unfinished and updates the overall count")
+click(secrets.controls.routeStatus)
+assert(alcazButton:IsVisible() and cozyButton:IsVisible(), "All displays finished and unfinished routes")
+click(secrets.controls.routeStatus)
+assert(alcazButton:IsVisible() and not cozyButton:IsVisible()
+    and alcazButton.action:GetText():find("Replay", 1, true), "Completed offers finished routes for replay")
 click(alcazButton)
 assert(SecretCompassSecretDB.index == 1, "Replay starts from the first step")
 click(secrets.controls.next)
 click(secrets.controls.stop)
-assert(alcazButton.action:GetText():find("Resume", 1, true), "A paused replay can resume")
+assert(alcazButton:IsVisible() and alcazButton.action:GetText():find("Resume", 1, true),
+    "A paused replay remains completed and can resume")
+click(secrets.controls.routeStatus)
+click(secrets.controls.routeStatus)
 click(cozyButton)
 assert(SecretCompassSecretDB.index == 2 and SecretCompassSecretDB.route.title == "Cozy Sleeping Bag",
     "Starting a second secret preserves the first secret's checkpoint")

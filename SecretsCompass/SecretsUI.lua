@@ -21,6 +21,11 @@ for index, category in ipairs(categoryOrder) do
     routeCategories[category.key] = category
 end
 local otherCategory = { key = "other", order = #categoryOrder + 1, label = "Other Secrets", icon = "INV_Misc_QuestionMark" }
+local statusOptions = {
+    all = { label = "All", next = "completed" },
+    completed = { label = "Completed", next = "unfinished" },
+    unfinished = { label = "Unfinished", next = "all" },
+}
 local gold = { 0.96, 0.78, 0.43 }
 local muted = { 0.73, 0.67, 0.55 }
 local finishedColor = { 0.68, 0.76, 0.48 }
@@ -216,7 +221,7 @@ local function paginateRoutes(routes, collapsed, screenHeight)
     return pages, height, routeIndex
 end
 
-local function makePanel(api, changePage, changeFilter, setAllCategories)
+local function makePanel(api, changePage, changeFilter, setAllCategories, cycleStatus)
     local panel = CreateFrame("Frame", panelName, UIParent, "PortraitFrameTemplate")
     panel:SetSize(424, journalHeight)
     panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 34, -126)
@@ -344,7 +349,7 @@ local function makePanel(api, changePage, changeFilter, setAllCategories)
     controls.routeCategoryMenu = menu
     controls.routeCategoryOptions = {}
     menu:SetSize(154, 4 + 24 * (#categoryOrder + 1))
-    menu:SetPoint("TOPLEFT", 252, -174)
+    menu:SetPoint("TOPLEFT", 252, -206)
     menu:SetFrameLevel(body:GetFrameLevel() + 10)
     menu:EnableMouse(true)
     surface(menu, "BACKGROUND", 0.09, 0.075, 0.057, 1)
@@ -379,6 +384,7 @@ local function makePanel(api, changePage, changeFilter, setAllCategories)
     end)
     controls.routeExpandAll = button(body, "Expand All", 98, 18, -177, function() setAllCategories(nil) end)
     controls.routeCollapseAll = button(body, "Collapse All", 104, 124, -177, function() setAllCategories(true) end)
+    controls.routeStatus = button(body, "", 154, 252, -177, cycleStatus)
     controls.routeEmpty = label(body, "GameFontHighlight", 18, -routeListTop, 388, 40)
     controls.routeEmpty:SetTextColor(unpack(muted))
 
@@ -530,7 +536,7 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
     local ui = {}
     local panel, finished
     local page = 1
-    local query, categoryFilter = "", "all"
+    local query, categoryFilter, statusFilter = "", "all", "all"
     local collapsed = type(collapsedCategories) == "table" and collapsedCategories or {}
 
     function ui:Refresh()
@@ -584,6 +590,7 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
         controls.routeCategory:SetShown(not tracking)
         controls.routeExpandAll:SetShown(not tracking)
         controls.routeCollapseAll:SetShown(not tracking)
+        controls.routeStatus:SetShown(not tracking)
         controls.routeRule:SetShown(not tracking)
         controls.routeEmpty:Hide()
         local height, paging, pageCount = journalHeight, false, 1
@@ -591,13 +598,16 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
             controls.routeSearch:ClearFocus()
             controls.routeCategoryMenu:Hide()
         else
+            controls.routeStatus:SetText("Status: " .. statusOptions[statusFilter].label)
             local routes = api.getRoutes()
             local filtered, finishedCount = {}, 0
             for _, choice in ipairs(routes) do
-                if api.hasFinished(choice) then
+                local complete = api.hasFinished(choice)
+                if complete then
                     finishedCount = finishedCount + 1
                 end
-                if (categoryFilter == "all" or choice.category == categoryFilter)
+                local statusMatches = statusFilter == "all" or complete == (statusFilter == "completed")
+                if statusMatches and (categoryFilter == "all" or choice.category == categoryFilter)
                     and choice.title:lower():find(query, 1, true) then
                     filtered[#filtered + 1] = choice
                 end
@@ -606,9 +616,13 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
                 panel.progress:SetText(("%d of %d Built-In Routes Finished"):format(finishedCount, #routes))
             end
             if #filtered == 0 then
-                controls.routeEmpty:SetText(#routes == 0
-                    and "Built-in routes need your character's Alliance or Horde faction."
-                    or "No secrets match your search or category.")
+                if #routes == 0 then
+                    controls.routeEmpty:SetText("Built-in routes need your character's Alliance or Horde faction.")
+                elseif statusFilter == "all" then
+                    controls.routeEmpty:SetText("No secrets match your search or category.")
+                else
+                    controls.routeEmpty:SetText("No secrets match your search, type, and status filters.")
+                end
                 controls.routeEmpty:Show()
             end
             local pages, layoutHeight, expandedCount = paginateRoutes(filtered, collapsed, UIParent:GetHeight())
@@ -762,6 +776,12 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
                     collapsed[category.key] = value
                 end
                 collapsed[otherCategory.key] = value
+                panel.controls.routeCategoryMenu:Hide()
+                panel.controls.routeSearch:ClearFocus()
+                page = 1
+                self:Refresh()
+            end, function()
+                statusFilter = statusOptions[statusFilter].next
                 panel.controls.routeCategoryMenu:Hide()
                 panel.controls.routeSearch:ClearFocus()
                 page = 1
