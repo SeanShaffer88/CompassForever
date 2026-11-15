@@ -957,6 +957,58 @@ local list = namespace.StandaloneSecrets()
 local cozyButton = assert(secrets.controls.routes[list[1].id])
 local alcazButton = assert(secrets.controls.routes[list[2].id])
 assert(secrets:IsVisible() and cozyButton:IsVisible() and alcazButton:IsVisible())
+do
+    local expected = {
+        ["scarlet-banner"] = { {1417, 622, 545}, {1445, 637, 424}, {1435, 168, 538}, {1420, 826, 338} },
+        ["musical-gustjumper"] = { {2521, 515, 723} },
+        ["night-watchmans-torch"] = { {1431, 287, 333} },
+        ["lyn-the-ignored"] = { {1421, 448, 678}, {1421, 634, 643}, {1416, 85, 593} },
+        ["dawn-waker-eluviana"] = { {2521, 417, 234}, {2521, 476, 719} },
+    }
+    for _, side in ipairs({ "Horde", "Alliance" }) do
+        faction = side
+        local choices = namespace.StandaloneSecrets()
+        assert(#choices == 7, "Every built-in route is available to either faction")
+        for i = 3, #choices do
+            local choice = choices[i]
+            assert(choice.sourceURL and secrets.controls.routes[choice.id]:IsVisible(),
+                "Every added route has a source and appears in the standalone journal")
+            for _, point in ipairs(assert(expected[choice.id], "Unexpected built-in route ID")) do
+                local found
+                for _, step in ipairs(choice.steps) do
+                    for _, pin in ipairs(step.waypoints) do
+                        if pin.mapID == point[1] and math.abs(pin.x - point[2] / 1000) < 0.00001
+                            and math.abs(pin.y - point[3] / 1000) < 0.00001 then
+                            found = true
+                        end
+                    end
+                end
+                assert(found, ("Missing source-checked point for %s"):format(choice.title))
+            end
+        end
+        assert(#choices[3].steps[5].waypoints == 0 and #choices[6].steps[4].waypoints == 0,
+            "Interior puzzle and summon steps have landmark instructions")
+        assert(#choices[5].steps[1].waypoints == 9 and #choices[7].steps[4].waypoints == 5,
+            "Spawn alternatives stay in the same step")
+    end
+    faction = "Horde"
+    assert(secrets.progress:GetText() == "0 of 7 Built-In Routes Finished")
+
+    local torch = secrets.controls.routes["night-watchmans-torch"]
+    click(torch)
+    assert(SecretCompassSecretDB.index == 1 and secrets.controls.location:IsVisible()
+        and not secrets.controls.mapCommand:IsVisible(), "Clue mode keeps spawn coordinates private")
+    click(secrets.controls.revealCoordinates)
+    for i = 1, 3 do click(secrets.controls.location) end
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1431 28.70 33.30",
+        "The additional Wowhead search spot is reachable from the journal")
+    click(secrets.controls.stop)
+    click(torch)
+    assert(SecretCompassSecretDB.index == 1 and SecretCompassSecretDB.locationIndex == 4,
+        "Resuming a standalone route keeps the selected spawn alternative")
+    click(secrets.controls.stop)
+end
 acceptedQuests[79007] = true
 click(cozyButton)
 assert(secrets.routeTitle:GetText() == "Cozy Sleeping Bag" and secrets.progress:GetText():match("^Step 1"))

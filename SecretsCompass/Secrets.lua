@@ -460,6 +460,159 @@ local function alcazRoute(faction)
     })
 end
 
+local function scarletBannerRoute()
+    return ns.NormalizeSecretRoute({
+        id = "scarlet-banner",
+        title = "Scarlet Banner",
+        sourceURL = "https://www.wowhead.com/forever/guide/collections/scarlet-banner-puzzle-locations",
+        steps = {
+            routeStep("Collect the Arathi Echo",
+                "Find the grave behind the large northern barn at Go'shek Farm and loot the Arathi Echo.",
+                { mapID = 1417, x = 0.622, y = 0.545, label = "Approximate Arathi grave" },
+                "Look behind a farm building for a grave."),
+            routeStep("Collect the Theramore Echo",
+                "Loot the Theramore Echo in the small roadside graveyard north of Theramore, before the bridge to the isle.",
+                { mapID = 1445, x = 0.637, y = 0.424, label = "Approximate Theramore grave" },
+                "A grave outside the island settlement holds another echo."),
+            routeStep("Collect the Swamp Echo",
+                "Find the grave near the western road into the Swamp of Sorrows and loot the Swamp Echo.",
+                { mapID = 1435, x = 0.168, y = 0.538, label = "Approximate Swamp grave" },
+                "Search near the road on the western edge of the marsh."),
+            routeStep("Collect the Graveyard Echo",
+                "Take the far-left portal into the Scarlet Monastery Graveyard. Look inside the fenced graves on the left, "
+                    .. "about halfway through the yard, and loot the Graveyard Echo.",
+                { mapID = 1420, x = 0.826, y = 0.338, label = "Scarlet Monastery entrance" },
+                "The last echo rests among the fenced graves.",
+                nil, "The pin leads to the monastery in Tirisfal Glades. The grave is inside the instance."),
+            routeStep("Solve the Library Statue Puzzle",
+                "Take the far-right portal into the Scarlet Monastery Library with all four Echoes. Use them in order: "
+                    .. "Swamp at Warrior, Arathi at Mage, Theramore at Paladin, Graveyard at Priest. "
+                    .. "Loot the banner from the glowing object in the middle of the room.",
+                nil, "Match each echo to a statue. The order of the statues in the hall is different from the ritual order."),
+        },
+    })
+end
+
+local function musicalGustjumperRoute()
+    return ns.NormalizeSecretRoute({
+        id = "musical-gustjumper",
+        title = "Musical Gustjumper",
+        sourceURL = "https://www.wowhead.com/forever/item=268109/musical-gustjumper",
+        steps = {
+            routeStep("Sing to the Frogs",
+                "Target a frog on the rock at the top of the waterfall and use /sing. Interact with the frog that appears "
+                    .. "nearby, then use the item to learn the Musical Gustjumper.",
+                { mapID = 2521, x = 0.515, y = 0.723, label = "Waterfall frogs" },
+                "Listen by the waterfall. The locals may answer a tune."),
+        },
+    })
+end
+
+local function nightWatchmansTorchRoute()
+    return ns.NormalizeSecretRoute({
+        id = "night-watchmans-torch",
+        title = "Night Watchman's Torch",
+        sourceURL = "https://warcraft-secrets.com/guides/night-watchmans-torch",
+        steps = {
+            {
+                title = "Find a Fallen Night Watch Guard",
+                note = "Look for a fallen Night Watch Guard at any of the search locations. "
+                    .. "Accept An Unfortunate End from the guard and turn it in there to receive the torch. "
+                    .. "Use Next Location if the guard is absent.",
+                clue = "Search for a watcher who never returned from patrol.",
+                waypoints = {
+                    { mapID = 1431, x = 0.170, y = 0.546, label = "Raven Hill lookout" },
+                    { mapID = 1431, x = 0.226, y = 0.736, label = "Addle's Stead lookout" },
+                    { mapID = 1431, x = 0.234, y = 0.334, label = "Raven Hill Cemetery lookout" },
+                    { mapID = 1431, x = 0.287, y = 0.333, label = "Northern Raven Hill Cemetery lookout" },
+                    { mapID = 1431, x = 0.300, y = 0.676, label = "Vul'Gol Ogre Mound lookout" },
+                    { mapID = 1431, x = 0.454, y = 0.792, label = "Stranglethorn road lookout" },
+                    { mapID = 1431, x = 0.476, y = 0.596, label = "Twilight Grove entrance lookout" },
+                    { mapID = 1431, x = 0.660, y = 0.338, label = "Brightwood Grove lookout" },
+                    { mapID = 1431, x = 0.688, y = 0.696, label = "Rotting Orchard lookout" },
+                },
+            },
+        },
+    })
+end
+
+local function lynTheIgnoredRoute()
+    return ns.NormalizeSecretRoute({
+        id = "lyn-the-ignored",
+        title = "Lyn the Ignored",
+        sourceURL = "https://www.wowhead.com/forever/news/how-to-find-the-secret-boss-in-the-city-of-dalaran-dungeon-in-wow-forever-383366",
+        steps = {
+            routeStep("Retrieve the Black Tome",
+                "Defeat Archmage Arugal in Shadowfang Keep and take the Black Tome from the book on his table.",
+                { mapID = 1421, x = 0.448, y = 0.678, label = "Shadowfang Keep entrance" },
+                "Search the archmage's quarters after the fight.",
+                nil, "The pin leads to the dungeon entrance in Silverpine Forest."),
+            routeStep("Create the Tome of Dalaran",
+                "Find the floating blue crystal in the Ambermill town hall. Use the Black Tome next to the "
+                    .. "Ambermill Leyline Focus to turn it into the Tome of Dalaran.",
+                { mapID = 1421, x = 0.634, y = 0.643, label = "Ambermill Leyline Focus" },
+                "The tome reacts to a source of magic in a nearby town."),
+            routeStep("Enter the City of Dalaran",
+                "Gather a group with access to the City of Dalaran through the sewer gate. Bring the Tome of Dalaran. "
+                    .. "The Dalaran Sewer Key opens the gate.",
+                { mapID = 1416, x = 0.085, y = 0.593, label = "Approximate Dalaran sewer entrance" },
+                "Look for a way into the city from below.",
+                nil, "The pin marks the approach to the sewer gate in the Alterac Mountains."),
+            routeStep("Summon Lyn the Ignored",
+                "Defeat Atrexis the Grave Knight. Continue straight through the sewers instead of turning right "
+                    .. "to the surface. Use the Tome of Dalaran at the purple summoning circle, then defeat Lyn.",
+                nil, "After the first boss, stay below and look for an unassuming side room."),
+        },
+    })
+end
+
+local function dawnWakerEluvianaRoute()
+    local ealaane = { mapID = 2521, x = 0.6594, y = 0.7437, label = "Ealaane Nimbuswalker" }
+    return ns.NormalizeSecretRoute({
+        id = "dawn-waker-eluviana",
+        title = "Dawn Waker: Eluvi'ana",
+        sourceURL = "https://www.wowhead.com/forever/guide/dawn-waker-secret-walkthrough",
+        steps = {
+            {
+                title = "Secure the Ancient Heirloom",
+                note = "If you already have the Ancient Heirloom ring, continue to the next step. You can find "
+                    .. "a ring on the upper floor of the tower in Thendal Village. If Ailee Farheart offers "
+                    .. "Coming of Age, you can also turn that quest in to Rorian the Dayseeker for the ring.",
+                clue = "Look for a family keepsake high above the village.",
+                waypoints = {
+                    { mapID = 2521, x = 0.417, y = 0.234, label = "Ancient Heirloom tower" },
+                    { mapID = 2521, x = 0.428, y = 0.234, label = "Ailee Farheart" },
+                },
+            },
+            routeStep("Reveal the Ancient Hilt",
+                "At the Ruins of Ban'aethal, light the area with a Night Watchman's Torch or ask a friend to "
+                    .. "light it for you. Interact with the revealed Ancient Hilt and accept its quest.",
+                { mapID = 2521, x = 0.5813, y = 0.2406, label = "Ancient Hilt" },
+                "Old ruins may reveal more by torchlight."),
+            routeStep("Show Ealaane the Hilt",
+                "Turn in The Ancient Hilt to Ealaane Nimbuswalker and talk to her about what else may be hidden on the isle.",
+                ealaane, "Find someone who recognizes the old craftsmanship."),
+            {
+                title = "Search for the Ancient Sword",
+                note = "Interact with the Ancient Sword to collect the Ancient Skyborne Blade. The sword appears "
+                    .. "at different locations. Use Next Location to check another reported spot.",
+                clue = "Look for an old blade in places travellers rarely stop.",
+                waypoints = {
+                    { mapID = 2521, x = 0.476, y = 0.719, label = "Mountainside lookout" },
+                    { mapID = 2521, x = 0.489, y = 0.727, label = "Second mountainside lookout" },
+                    { mapID = 2521, x = 0.505, y = 0.444, label = "Lake bottom lookout" },
+                    { mapID = 2521, x = 0.599, y = 0.822, label = "Floating island below the bridge" },
+                    { mapID = 2521, x = 0.663, y = 0.432, label = "Riverbank above the waterfall" },
+                },
+            },
+            routeStep("Claim Eluvi'ana",
+                "Take the Ancient Skyborne Blade to Ealaane Nimbuswalker to receive Eluvi'ana. This completes "
+                    .. "the Eluvi'ana chapter of the ongoing Dawn Waker mystery.",
+                ealaane, "Return to the person who sent you looking."),
+        },
+    })
+end
+
 function ns.StandaloneSecrets()
     -- Route facts cross-checked against the Forever guides from Method and Wowhead.
     local source = "https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards"
@@ -522,5 +675,6 @@ function ns.StandaloneSecrets()
     return { ns.NormalizeSecretRoute({
         id = "cozy-sleeping-bag:" .. faction,
         title = "Cozy Sleeping Bag", sourceURL = source, steps = steps,
-    }), alcazRoute(faction) }
+    }), alcazRoute(faction), scarletBannerRoute(), musicalGustjumperRoute(),
+        nightWatchmansTorchRoute(), lynTheIgnoredRoute(), dawnWakerEluvianaRoute() }
 end
