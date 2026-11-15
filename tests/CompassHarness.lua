@@ -718,7 +718,7 @@ do
         end
         local lastRow = secrets.controls.routes[isAlliance and "silver-of-the-waves" or "whispering-horror-residue"]
         local _, _, rowY = lastRow:GetPoint()
-        assert(secrets:GetHeight() == (isAlliance and 1015 or 985)
+        assert(secrets:GetHeight() == (isAlliance and 1031 or 1001)
             and not secrets.controls.routePageNext:IsVisible()
             and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 15,
             "The last route row fits above navigation")
@@ -1057,12 +1057,12 @@ do
     end
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(1, 12, 697)
+    assertPage(1, 11, 683)
     assert(secrets.progress:GetText() == "1 of 21 Built-In Routes Finished",
         "Completion includes finished routes off the current page")
     SecretCompassSecretDB.finishedRoutes["whispering-horror-residue"] = nil
     click(nextPage)
-    assertPage(13, 21, 697)
+    assertPage(12, 21, 683)
     click(lateRoute)
     assert(secrets.routeTitle:GetText() == "Whispering Horror Residue" and not range:IsVisible()
         and not previousPage:IsVisible() and not nextPage:IsVisible() and not lateRoute:IsVisible(),
@@ -1071,9 +1071,9 @@ do
         assert(not heading:IsVisible(), "Tracking hides category headings")
     end
     click(controls.stop)
-    assertPage(13, 21, 697)
+    assertPage(12, 21, 683)
     click(previousPage)
-    assertPage(1, 12, 697)
+    assertPage(1, 11, 683)
 
     click(controls.routes["condor-hatchling"])
     click(controls.revealCoordinates)
@@ -1082,7 +1082,7 @@ do
     assert(controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90",
         "Next Location reaches an alternate Lord Condar search area")
     click(controls.stop)
-    assertPage(1, 12, 697)
+    assertPage(1, 11, 683)
 
     click(controls.routes["bitter-baitling"])
     click(controls.revealCoordinates)
@@ -1097,30 +1097,30 @@ do
     assert(controls.mapCommandInput:GetText() == "/mappin 1434 26.70 76.30",
         "The final step leads to Jang for the prize exchange")
     click(controls.stop)
-    assertPage(1, 12, 697)
+    assertPage(1, 11, 683)
 
     faction = "Alliance"
     choices = displayOrder(true)
     UIParent:SetHeight(480)
     fireAddonEvent("UI_SCALE_CHANGED")
-    assertPage(1, 6, 469)
+    assertPage(1, 5, 455)
     click(nextPage)
-    assertPage(7, 11, 469)
+    assertPage(6, 9, 455)
     click(nextPage)
-    assertPage(12, 16, 469)
+    assertPage(10, 13, 455)
     click(nextPage)
-    assertPage(17, 21, 469)
+    assertPage(14, 17, 455)
     click(nextPage)
-    assertPage(22, 22, 469)
+    assertPage(18, 22, 455)
     faction = "Horde"
     choices = displayOrder(false)
     slash("secrets")
     slash("secrets")
-    assertPage(16, 21, 469)
+    assertPage(18, 21, 455)
     assert(not controls.routes["baby-crocolisk"]:IsVisible(), "The Alliance route stays hidden on the Horde page")
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(13, 21, 697)
+    assertPage(12, 21, 683)
     UIParent:SetHeight(1080)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     assert(not range:IsVisible() and cozyButton:IsVisible() and lateRoute:IsVisible(),
@@ -1130,7 +1130,9 @@ do
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     click(nextPage)
-    assertPage(13, 21, 697)
+    assertPage(12, 21, 683)
+    click(controls.routeExpandAll)
+    assertPage(1, 11, 683)
     local search = controls.routeSearch
     search:SetText("   sLiMe  ")
     local slime = controls.routes["excitable-slime"]
@@ -1148,6 +1150,27 @@ do
     click(controls.routeCategoryOptions.pets)
     assert(slime:IsVisible() and not controls.routeEmpty:IsVisible(), "Changing categories restores a matching route")
     local pets = assert(controls.routeHeadings["Pets"])
+    local _, _, expandY = controls.routeExpandAll:GetPoint()
+    local _, _, petsY = pets:GetPoint()
+    assert(expandY - controls.routeExpandAll:GetHeight() > petsY, "The bulk controls clear the first heading")
+    local savedCategories = SecretCompassSecretDB.collapsedCategories
+    savedCategories["future-category"] = true
+    click(controls.routeCategory)
+    click(controls.routeCollapseAll)
+    for _, key in ipairs({ "pets", "collectibles", "utility", "professions", "mysteries", "other" }) do
+        assert(savedCategories[key] == true, "Collapse All updates categories outside the current filter")
+    end
+    assert(pets:GetText() == "+  PETS" and not slime:IsVisible() and not cozyButton:IsVisible()
+        and search:GetText() == "   sLiMe  " and controls.routeCategory:GetText() == "Pets  v"
+        and not controls.routeCategoryMenu:IsVisible() and not controls.routeEmpty:IsVisible()
+        and secrets.progress:GetText() == "0 of 21 Built-In Routes Finished",
+        "Collapse All preserves the search, type filter and progress")
+    click(controls.routeExpandAll)
+    assert(slime:IsVisible() and not cozyButton:IsVisible() and pets:GetText() == "-  PETS"
+        and savedCategories["future-category"] == true and savedCategories.pets == nil
+        and savedCategories.utility == nil and savedCategories.other == nil,
+        "Expand All restores matching rows and leaves unknown saved categories untouched")
+    savedCategories["future-category"] = nil
     click(pets)
     assert(SecretCompassSecretDB.collapsedCategories.pets == true, "Collapsing a heading saves its category key")
     assert(pets:IsVisible() and pets:GetText() == "+  PETS" and not slime:IsVisible()
@@ -1165,7 +1188,8 @@ do
     search:SetText("slime")
     search:SetFocus()
     click(slime)
-    assert(not search:IsVisible() and not search:HasFocus() and not controls.routeCategory:IsVisible(),
+    assert(not search:IsVisible() and not search:HasFocus() and not controls.routeCategory:IsVisible()
+        and not controls.routeExpandAll:IsVisible() and not controls.routeCollapseAll:IsVisible(),
         "Active routes hide browse controls and release search focus")
     assertNavigationPosition()
     click(controls.stop)
@@ -1174,7 +1198,7 @@ do
     click(controls.routeCategory)
     click(controls.routeCategoryOptions.all)
     search:SetText("")
-    assertPage(1, 12, 697)
+    assertPage(1, 11, 683)
     click(nextPage)
     click(controls.routeHeadings["Quests & Mysteries"])
     click(controls.routeHeadings["Professions"])

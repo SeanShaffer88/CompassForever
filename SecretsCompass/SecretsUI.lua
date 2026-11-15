@@ -5,7 +5,7 @@ local journalTitle = "SecretsCompass Journal"
 local portraitPath = "Interface\\AddOns\\" .. addonName .. "\\Media\\MinimapCompass.tga"
 local journalHeight = 471
 local routeRowHeight, routeHeadingHeight = 30, 24
-local browseToolbarHeight = 34
+local browseToolbarHeight = 50
 local routeListTop, routeFrameHeight, routePagerHeight = 157 + browseToolbarHeight, 201 + browseToolbarHeight, 30
 local routePageInset = 10
 local categoryOrder = {
@@ -216,7 +216,7 @@ local function paginateRoutes(routes, collapsed, screenHeight)
     return pages, height, routeIndex
 end
 
-local function makePanel(api, changePage, changeFilter)
+local function makePanel(api, changePage, changeFilter, setAllCategories)
     local panel = CreateFrame("Frame", panelName, UIParent, "PortraitFrameTemplate")
     panel:SetSize(424, journalHeight)
     panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 34, -126)
@@ -377,6 +377,8 @@ local function makePanel(api, changePage, changeFilter)
         self:SetText("")
         self:ClearFocus()
     end)
+    controls.routeExpandAll = button(body, "Expand All", 98, 18, -177, function() setAllCategories(nil) end)
+    controls.routeCollapseAll = button(body, "Collapse All", 104, 124, -177, function() setAllCategories(true) end)
     controls.routeEmpty = label(body, "GameFontHighlight", 18, -routeListTop, 388, 40)
     controls.routeEmpty:SetTextColor(unpack(muted))
 
@@ -580,6 +582,8 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
         end
         controls.routeSearch:SetShown(not tracking)
         controls.routeCategory:SetShown(not tracking)
+        controls.routeExpandAll:SetShown(not tracking)
+        controls.routeCollapseAll:SetShown(not tracking)
         controls.routeRule:SetShown(not tracking)
         controls.routeEmpty:Hide()
         local height, paging, pageCount = journalHeight, false, 1
@@ -751,6 +755,15 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
             end, function(text, category)
                 query = (text or ""):match("^%s*(.-)%s*$"):lower()
                 categoryFilter = category or categoryFilter
+                page = 1
+                self:Refresh()
+            end, function(value)
+                for _, category in ipairs(categoryOrder) do
+                    collapsed[category.key] = value
+                end
+                collapsed[otherCategory.key] = value
+                panel.controls.routeCategoryMenu:Hide()
+                panel.controls.routeSearch:ClearFocus()
                 page = 1
                 self:Refresh()
             end)
