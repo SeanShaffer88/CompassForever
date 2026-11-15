@@ -406,8 +406,9 @@ function ns.CreateSecretTracker(savedState, onChanged, resolveBuiltIn)
         if savedState.route or not last then
             return
         end
+        local reveal = reveals[last.id] or "clue"
         if last.route then
-            return last.route, last.index, last.locationIndex
+            return last.route, last.index, last.locationIndex, reveal
         end
         local checkpoint = checkpoints[last.id]
         if type(resolveBuiltIn) == "function" and checkpoint then
@@ -415,7 +416,7 @@ function ns.CreateSecretTracker(savedState, onChanged, resolveBuiltIn)
             if route and route.id == last.id and route.sourceURL == last.sourceURL then
                 local index, location = matchingCheckpoint(route, checkpoint)
                 if index then
-                    return route, index, location
+                    return route, index, location, reveal
                 end
             end
         end

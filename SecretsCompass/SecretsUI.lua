@@ -97,7 +97,7 @@ local function routeRow(parent, route, y, onClick)
     return row
 end
 
-local function waypointZone(waypoint)
+local function waypointZone(waypoint, knownOnly)
     if not waypoint then
         return
     end
@@ -109,6 +109,9 @@ local function waypointZone(waypoint)
         end
     end
     if (issecretvalue and issecretvalue(zone)) or type(zone) ~= "string" or zone == "" then
+        if knownOnly then
+            return
+        end
         zone = "Map " .. waypoint.mapID
     end
     return zone
@@ -382,7 +385,7 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
         self:SetText("")
         self:ClearFocus()
     end)
-    controls.continueLast = button(body, "Continue Last Secret", 150, 256, -85, api.continueLast)
+    controls.continueLast = button(body, "Continue Last Secret", 150, 256, -74, api.continueLast)
     controls.pausedRouteTitle = label(body, "GameFontNormalSmall", 18, -85, 228, 14)
     controls.pausedRouteTitle:SetTextColor(unpack(gold))
     if controls.pausedRouteTitle.SetWordWrap then
@@ -391,8 +394,14 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
     if controls.pausedRouteTitle.SetMaxLines then
         controls.pausedRouteTitle:SetMaxLines(1)
     end
-    controls.pausedStep = label(body, "GameFontHighlightSmall", 18, -99, 228, 12)
+    controls.pausedStep = label(body, "GameFontHighlightSmall", 18, -99, 388, 12)
     controls.pausedStep:SetTextColor(unpack(muted))
+    if controls.pausedStep.SetWordWrap then
+        controls.pausedStep:SetWordWrap(false)
+    end
+    if controls.pausedStep.SetMaxLines then
+        controls.pausedStep:SetMaxLines(1)
+    end
     controls.routeExpandAll = button(body, "Expand All", 98, 18, -177, function() setAllCategories(nil) end)
     controls.routeCollapseAll = button(body, "Collapse All", 104, 124, -177, function() setAllCategories(true) end)
     controls.routeStatus = button(body, "", 154, 252, -177, cycleStatus)
@@ -597,19 +606,26 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
         for _, heading in pairs(controls.routeHeadings) do
             heading:Hide()
         end
-        local pausedRoute, pausedIndex, pausedLocation
+        local pausedRoute, pausedIndex, pausedLocation, pausedReveal
         if not tracking then
-            pausedRoute, pausedIndex, pausedLocation = api.getLastPausedRoute()
+            pausedRoute, pausedIndex, pausedLocation, pausedReveal = api.getLastPausedRoute()
         end
         local canContinue = pausedRoute ~= nil
         local pausedStepText = ""
         if canContinue then
             pausedStepText = ("Step %d of %d"):format(pausedIndex, #pausedRoute.steps)
-            local waypointCount = #pausedRoute.steps[pausedIndex].waypoints
+            local waypoints = pausedRoute.steps[pausedIndex].waypoints
+            local waypointCount = #waypoints
             if waypointCount > 1 and type(pausedLocation) == "number"
                 and pausedLocation >= 1 and pausedLocation <= waypointCount
                 and pausedLocation == math.floor(pausedLocation) then
                 pausedStepText = pausedStepText .. (" · Location %d of %d"):format(pausedLocation, waypointCount)
+                if pausedReveal == "coordinates" or pausedReveal == "full" then
+                    local zone = waypointZone(waypoints[pausedLocation], true)
+                    if zone then
+                        pausedStepText = pausedStepText .. " · " .. zone
+                    end
+                end
             end
         end
         controls.continueLast:SetShown(canContinue)
@@ -620,7 +636,7 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
         panel.routeTitle:SetHeight(canContinue and 18 or 34)
         panel.progress:ClearAllPoints()
         panel.progress:SetPoint("TOPLEFT", 18, canContinue and -70 or -88)
-        panel.progress:SetHeight(canContinue and 14 or 18)
+        panel.progress:SetSize(canContinue and 228 or 390, canContinue and 14 or 18)
         controls.routeSearch:SetShown(not tracking)
         controls.routeCategory:SetShown(not tracking)
         controls.routeExpandAll:SetShown(not tracking)

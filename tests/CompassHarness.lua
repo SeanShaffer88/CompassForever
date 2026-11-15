@@ -1922,17 +1922,19 @@ do
             and controls.pausedRouteTitle:GetText() == (title or "") and controls.pausedStep:GetText() == (step or ""),
             "Resume details show only the paused route title and step ordinal")
         local _, _, titleY = journal.routeTitle:GetPoint()
-        local _, _, progressY = journal.progress:GetPoint()
+        local _, progressX, progressY = journal.progress:GetPoint()
         local _, nameX, nameY = controls.pausedRouteTitle:GetPoint()
         local _, _, stepY = controls.pausedStep:GetPoint()
         local _, _, hintY = journal.stepTitle:GetPoint()
-        local _, buttonX = controls.continueLast:GetPoint()
+        local _, buttonX, buttonY = controls.continueLast:GetPoint()
         if visible then
             assert(titleY - journal.routeTitle:GetHeight() >= progressY
                 and progressY - journal.progress:GetHeight() >= nameY
                 and nameY - controls.pausedRouteTitle:GetHeight() >= stepY
                 and stepY - controls.pausedStep:GetHeight() >= hintY
-                and nameX + controls.pausedRouteTitle:GetWidth() < buttonX,
+                and nameX + controls.pausedRouteTitle:GetWidth() < buttonX
+                and progressX + journal.progress:GetWidth() < buttonX
+                and buttonY - controls.continueLast:GetHeight() >= stepY,
                 "Resume details clear the chooser, count, shortcut and companion hint")
         else
             assert(journal.routeTitle:GetHeight() == 34 and progressY == -88
@@ -1958,7 +1960,7 @@ do
     click(journal.controls.stop)
     local bookmark = assert(saved.lastPaused)
     assert(journal.controls.continueLast:IsVisible(), "Pausing creates the Continue Last Secret shortcut")
-    assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
+    assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3 · Test Map 1432")
 
     saved.lastPaused = nil
     journal = reloadJournal(saved)
@@ -1977,7 +1979,7 @@ do
     local shortcut = journal.controls.continueLast
     assert(shortcut:IsVisible() and shortcut:GetText() == "Continue Last Secret"
         and journal.controls.routeEmpty:IsVisible(), "The restored shortcut is independent of browse filters")
-    assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
+    assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3 · Test Map 1432")
     click(shortcut)
     assertResumeDetails(journal)
     assert(saved.route.id == condor.id and saved.index == 1 and saved.locationIndex == 2
@@ -1985,6 +1987,12 @@ do
         "Continuing a built-in route restores its exact step and alternate location")
     click(journal.controls.mapCommand)
     assert(journal.controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90")
+    for _, reveal in ipairs({ "distance", "clue" }) do
+        assert(runtimeTracker:SetReveal(reveal))
+        click(journal.controls.stop)
+        assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
+        click(journal.controls.continueLast)
+    end
 
     local guideURL = "https://example.com/duplicate-title"
     local imported = {
@@ -2002,12 +2010,21 @@ do
     assertResumeDetails(journal, imported.title, "Step 1 of 2")
     click(journal.controls.continueLast)
     assert(runtimeTracker:Jump(2) and runtimeTracker:CycleLocation())
-    runtimeTracker:SetReveal("coordinates")
+    runtimeTracker:SetReveal("full")
+    local getMapInfo = C_Map.GetMapInfo
+    C_Map.GetMapInfo = function(mapID)
+        if mapID ~= 4 then
+            return getMapInfo(mapID)
+        end
+    end
     click(journal.controls.stop)
     assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2")
     SecretChecklist = nil
     journal = reloadJournal(saved)
     assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2")
+    C_Map.GetMapInfo = getMapInfo
+    journal = reloadJournal(saved)
+    assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2 · Test Map 4")
     click(journal.controls.continueLast)
     assertResumeDetails(journal)
     assert(saved.route.id == imported.id and saved.route.title == condor.title and saved.index == 2
