@@ -2120,6 +2120,21 @@ do
     local _, clearX = clear:GetPoint()
     assert(setX + journal.controls.setWaypoint:GetWidth() < clearX, "The fourth action fits beside Set")
 
+    local originalBookmark = saved.lastPaused
+    local samePointURL = "https://example.com/same-point"
+    local samePoint = namespace.NormalizeSecretRoute({
+        id = "secret-checklist:" .. samePointURL, sourceURL = samePointURL, title = "Another Guide",
+        steps = { { title = "Visit the spot", waypoints = { condor.steps[1].waypoints[2] } } },
+    })
+    saved.lastPaused = { id = samePoint.id, sourceURL = samePoint.sourceURL, route = samePoint, index = 1, locationIndex = 1 }
+    saved.reveals[samePoint.id] = "coordinates"
+    click(clear)
+    assert(not clear:IsVisible() and clearCalls == 0 and getterCalls == 1,
+        "A different saved route at the same coordinates cannot clear the journal pin")
+    saved.lastPaused, saved.reveals[samePoint.id] = originalBookmark, nil
+    journal.controls.routeSearch:SetText("no matching secret")
+    assert(clear:IsVisible(), "The original bookmark can still clear its verified pin")
+
     clearMode = "noop"
     click(clear)
     assert(clearCalls == 1 and clear:IsVisible()
