@@ -920,11 +920,15 @@ local function fireAddonEvent(name, ...)
     end
 end
 
+local completionFlags, acceptedQuests = {}, {}
+C_QuestLog.IsQuestFlaggedCompleted = function(id) return completionFlags[id] end
+C_QuestLog.IsOnQuest = function(id) return acceptedQuests[id] end
 fireAddonEvent("PLAYER_LOGIN")
 assert(not SecretCompassSecretChecklistTrackButton, "Standalone mode has no foreign-addon button")
 slash("secrets")
 local secrets = assert(SecretCompassSecrets)
 assert(secrets:IsVisible() and secrets.controls.start:IsVisible())
+acceptedQuests[79007] = true
 click(secrets.controls.start)
 assert(secrets.routeTitle:GetText() == "Cozy Sleeping Bag" and secrets.progress:GetText():match("^Step 1"))
 assert(secrets.controls.enableHUD:IsVisible(), "Tracking from a hidden HUD offers Show HUD")
@@ -932,8 +936,42 @@ click(secrets.controls.enableHUD)
 assert(frame:IsVisible())
 facing, currentMap, unavailable = 0, 1, false
 advance()
-assert(marker:IsVisible() and marker.labels[1]:GetText():find("Secret", 1, true),
-    "Standalone route shows a dedicated HUD distance")
+assert(marker:IsVisible() and marker.labels[1]:GetText():find("Secret", 1, true)
+   and not marker.labels[1]:GetText():find(" yd", 1, true), "Clue mode shows a marker without yardage")
+assert(secrets.note:GetText() == "" and not secrets.locationText:GetText():find("%d+%.%d+"),
+    "Clue mode hides instructions and precise coordinates")
+assert(marker.lines[1].start[4] == 6, "Clue mode uses a fixed-size marker")
+local hunt = assert(SecretCompassHuntClue)
+assert(hunt:IsVisible() and hunt:GetText():find("1/7", 1, true), "Compact HUD shows active step")
+click(secrets.controls.close)
+assert(not secrets:IsVisible() and hunt:IsVisible(), "Compact HUD works with both guide windows closed")
+slash("secrets")
+assert(secrets.controls.suggested:IsVisible() and SecretCompassSecretDB.index == 1,
+    "Confirmed starter quest acceptance suggests a step without selecting it")
+click(secrets.controls.suggested)
+assert(SecretCompassSecretDB.index == 2, "Suggested step depends on explicit player selection")
+currentMap = 4
+advance()
+assert(secrets.locationText:GetText():find("Destination:", 1, true)
+    and secrets.travel:GetText() ~= "" and not marker:IsVisible(), "Curated travel hint works without a bearing")
+currentMap = 1
+click(secrets.controls.previous)
+acceptedQuests[79007] = nil
+click(secrets.controls.revealDistance)
+assert(marker.labels[1]:GetText():find(" yd", 1, true)
+    and not secrets.locationText:GetText():find("%d+%.%d+"), "Distance mode reveals only yardage")
+click(secrets.controls.revealCoordinates)
+assert(secrets.locationText:GetText():find("%d+%.%d+") and secrets.note:GetText() == "",
+    "Coordinates mode still withholds full instructions")
+click(secrets.controls.revealFull)
+assert(secrets.note:GetText() ~= "", "Full mode reveals the instruction")
+click(secrets.controls.revealClue)
+assert(secrets.note:GetText() == "" and not marker.labels[1]:GetText():find(" yd", 1, true),
+    "Returning to Clue removes already revealed details")
+slash("test 64")
+assert(not hunt:IsVisible(), "Overflow test suppresses the compact hunt HUD")
+slash("test off")
+assert(hunt:IsVisible(), "Leaving overflow mode restores the compact hunt HUD")
 local starter = SecretCompassSecretDB.route
 assert(starter.steps[1].waypoints[1].mapID == 1413, "Horde begins in the Barrens")
 faction = "Alliance"
@@ -941,7 +979,8 @@ assert(namespace.StandaloneSecrets()[1].steps[1].waypoints[1].mapID == 1436, "Al
 faction = nil
 assert(#namespace.StandaloneSecrets() == 0, "The standalone route waits for an eligible faction")
 faction = "Horde"
-click(secrets.controls.next)
+assert(BINDING_NAME_SECRETCOMPASS_NEXT_STEP == "Next Secret Step")
+SecretCompassNextStep()
 assert(secrets.progress:GetText():match("^Step 2") and SecretCompassSecretDB.index == 2)
 local resumed = namespace.CreateSecretTracker(SecretCompassSecretDB, function() end)
 local _, resumedIndex = resumed:GetRoute()
@@ -990,7 +1029,10 @@ assert(foreignLink:GetScript("OnClick") == hostClick, "Companion keeps the host 
 waypoint = { uiMapID = 2, position = { x = 300, y = 0 } }
 local savedPin = waypoint
 click(trackSecret)
-assert(secrets.routeTitle:GetText() == "Fixture Secret" and secrets.stepTitle:GetText() == "Find the note")
+assert(secrets.routeTitle:GetText() == "Fixture Secret" and secrets.stepTitle:GetText() ~= "Find the note",
+    "Imported solutions remain hidden in Clue mode")
+click(secrets.controls.revealFull)
+assert(secrets.stepTitle:GetText() == "Find the note")
 assert(#SecretCompassSecretDB.route.steps == 3 and waypoint == savedPin)
 foreignEntry.steps[1].factionSubsteps.horde[1].label = "Upstream changed text"
 assert(SecretCompassSecretDB.route.steps[1].title == "Find the note", "Active route owns a snapshot")
@@ -1008,9 +1050,71 @@ click(secrets.controls.next)
 advance()
 assert(secrets.stepTitle:GetText() == "Return the note" and not marker:IsVisible())
 assert(secrets.controls.next:GetText() == "Finish")
-click(secrets.controls.next)
+slash("next")
 advance()
 assert(not SecretCompassSecretDB.route and waypoint == savedPin and marker:IsVisible()
     and not marker.labels[1]:GetText():find("Secret", 1, true), "Finishing restores normal waypoint rendering")
 
-print("SecretCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, and SecretChecklist companion")
+local cozy = namespace.StandaloneSecrets()[1]
+local importedCozy = {
+    name = "Cozy Sleeping Bag", questID = 79976, guideURL = cozy.sourceURL,
+    steps = {
+        {
+            label = "Start",
+            note = "Visit both locations.",
+            factionSubsteps = { horde = {
+                {label = "First", questIDs = {79008, 79007}, waypoint = cozy.steps[1].waypoints[1]},
+                {label = "Second", questIDs = {79008, 79007}, waypoint = cozy.steps[2].waypoints[1]},
+            }},
+        },
+        {label = "Camp", questID = 79192, waypoint = cozy.steps[3].waypoints[1]},
+        {label = "Rekindle", questID = 80001},
+        {label = "Mound", questID = 79980, waypoint = cozy.steps[4].waypoints[1]},
+    },
+}
+SecretChecklist.entries = {importedCozy}
+foreignLink.currentURL = importedCozy.guideURL
+completionFlags[79007], completionFlags[79192] = true, true
+click(trackSecret)
+assert(SecretCompassSecretDB.route.steps[5].optional and secrets.controls.suggested:IsVisible())
+click(secrets.controls.suggested)
+assert(SecretCompassSecretDB.index == 6, "Required suggestions pass over the verified optional Rekindle step")
+click(secrets.controls.previous)
+assert(SecretCompassSecretDB.index == 5, "Optional steps remain manually selectable")
+click(secrets.controls.stop)
+completionFlags[79007], completionFlags[79192] = nil, nil
+
+local state = {}
+local huntTracker = namespace.CreateSecretTracker(state, function() end)
+local routeOne = {
+    id = "fixture:hunt", title = "Hunt",
+    steps = {
+        { title = "First secret", clue = "Look for a lead.", travelHint = "Use the north entrance.",
+            completionQuestID = 401, completionOnAccept = true },
+        { title = "Second secret", completionQuestID = 402 },
+        { title = "Unverified puzzle" },
+        { title = "Last secret", completionQuestID = 404 },
+    },
+}
+local routeTwo = { id = "fixture:different", title = "Another", steps = {{title = "A clue"}} }
+assert(huntTracker:Track(routeOne) and huntTracker:GetReveal() == "clue")
+assert(huntTracker:SetReveal("distance") and huntTracker:GetReveal() == "distance")
+assert(huntTracker:SetReveal("coordinates") and huntTracker:GetReveal() == "coordinates")
+assert(huntTracker:SetReveal("full") and huntTracker:GetReveal() == "full")
+assert(huntTracker:SetReveal("invalid") == false)
+assert(huntTracker:Track(routeTwo) and huntTracker:GetReveal() == "clue")
+assert(huntTracker:Stop() and huntTracker:Track(routeOne) and huntTracker:GetReveal() == "full")
+local loadedTracker = namespace.CreateSecretTracker(state, function() end)
+assert(loadedTracker:GetReveal() == "full", "Reveal mode survives reload")
+local firstStep = loadedTracker:GetCurrentStep()
+assert(firstStep.clue == "Look for a lead." and firstStep.travelHint == "Use the north entrance.")
+completionFlags[401], completionFlags[402], completionFlags[404] = secret, true, true
+assert(loadedTracker:GetSuggestedStep() == nil, "Protected flags cannot substantiate progress")
+completionFlags[401], acceptedQuests[401] = false, true
+assert(loadedTracker:GetSuggestedStep() == 3, "Only the verified prefix counts")
+local _, beforeSuggestion = loadedTracker:GetRoute()
+assert(beforeSuggestion == 1, "Checking progress never advances")
+assert(loadedTracker:Jump(3) and not loadedTracker:Jump(8))
+assert(loadedTracker:Step(-1), "The suggested step can be manually overridden")
+
+print("SecretCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, spoiler levels, verified progress, and the SecretChecklist companion")

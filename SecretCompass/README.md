@@ -6,9 +6,11 @@ SecretCompass is a navigation HUD for World of Warcraft: Forever (Interface 1600
 
 - **Standalone:** Run `/secretcompass secrets` or open **Secrets** in the settings window, then choose **Track Cozy Sleeping Bag**. The first stops follow your character's faction.
 - **With SecretChecklist:** Open its **Guides** tab, select a guide, and click **Track Secret** beside its Guide button. SecretCompass reads the selected guide's steps and locations into a local route. The companion button uses the Guides layout in SecretChecklist 2.2.0 for WoW: Forever.
-- Use **Previous**, **Next**, or **Finish** as you complete each instruction. **Next Location** cycles alternate locations for a step. Steps without coordinates still show their instructions.
-- The compass gives the current step's bearing and distance when the game supplies usable positions in the same world space. For other zones and unavailable positions, use the zone and coordinates in the Secrets panel.
-- Progress is saved per character. **Stop** returns to your normal compass. Your existing World Map pin is preserved throughout.
+- Choose **Clue**, **Distance**, **Coordinates**, or **Full** for each secret. **Clue** shows a hint and a rough bearing when available. **Distance** reveals yards, **Coordinates** adds the map location, and **Full** shows the step title and instructions. The choice is saved per secret.
+- Use **Previous**, **Next**, or **Finish** when you complete an instruction. **Next Location** cycles alternatives. When the game can verify earlier quest steps, select the suggested step to jump ahead, or keep navigating manually.
+- If a bearing is unavailable, the destination zone and any available travel hint remain visible. The built-in route has curated access hints. Imported guides use the zone when no travel hint is available.
+- The compact hunt HUD follows your current step with the guide windows closed. Bind **Next Secret Step** under **Options → Keybindings → AddOns → SecretCompass**, or run `/secretcompass next`. The action starts unbound.
+- Active progress is saved per character. **Stop** returns to your normal compass. Your existing World Map pin is preserved throughout.
 
 Cozy Sleeping Bag references: [Method walkthrough](https://www.method.gg/wow-forever/how-to-unlock-the-cozy-sleeping-bag-in-wow-forever) and [Wowhead route](https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards). SecretChecklist compatibility is based on its [Forever Guides source](https://github.com/rousseauxy/SecretChecklist/blob/55dfb9eeff47f51a3429dd5047bd73e3c539ef7f/tabs/TabGuides.lua).
 

@@ -14,6 +14,7 @@ local settings, settingsUI
 local secretTracker, secretsUI
 local secretStep, secretContinent, secretX, secretY
 local secretBearing, secretDistance
+local secretReveal, secretZone, secretBearingAvailable
 local directions = { [0] = "N", [90] = "E", [180] = "S", [270] = "W" }
 
 local frame = CreateFrame("Frame", "SecretCompassFrame", UIParent)
@@ -154,6 +155,12 @@ waypoint:SetSize(1, 1)
 waypoint:Hide()
 local distanceLabel = waypoint:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 distanceLabel:SetTextColor(unpack(activeStyle.arc))
+local huntClue = frame:CreateFontString("SecretCompassHuntClue", "OVERLAY", "GameFontHighlightSmall")
+huntClue:SetPoint("TOP", frame, "CENTER", 0, -78)
+huntClue:SetSize(385, 54)
+huntClue:SetJustifyH("CENTER")
+huntClue:SetJustifyV("TOP")
+huntClue:Hide()
 local diamond = {}
 for index = 1, 4 do
     local color = activeStyle.pin
@@ -226,8 +233,8 @@ local function distanceText(yards, edge, prefix)
     return text
 end
 
-local previousOffset, previousYards, previousEdge, previousSize, previousSecret
-local function updateWaypoint(heading, bearing, distance, secret)
+local previousOffset, previousYards, previousEdge, previousSize, previousSecret, previousApproximate
+local function updateWaypoint(heading, bearing, distance, secret, approximate)
     if (not secret and not settings.showWaypoint) or not heading or not bearing then
         if waypoint:IsShown() then
             waypoint:Hide()
@@ -235,7 +242,10 @@ local function updateWaypoint(heading, bearing, distance, secret)
         return
     end
 
-    local offset, edge = markerOffset(heading, bearing, distance)
+    if approximate then
+        bearing = (math.floor((bearing + 22.5) / 45) * 45) % 360
+    end
+    local offset, edge = markerOffset(heading, bearing, approximate and 1 or distance)
     if offset ~= previousOffset then
         local x = offset * halfWidth / halfView
         waypoint:ClearAllPoints()
@@ -251,13 +261,17 @@ local function updateWaypoint(heading, bearing, distance, secret)
         previousOffset = offset
     end
 
-    local yards = math.floor(distance + 0.5)
-    if yards ~= previousYards or edge ~= previousEdge or secret ~= previousSecret then
-        distanceLabel:SetText(distanceText(yards, edge, secret and "Secret" or nil))
-        previousYards, previousEdge, previousSecret = yards, edge, secret
+    local yards = not approximate and math.floor(distance + 0.5) or nil
+    if yards ~= previousYards or edge ~= previousEdge or secret ~= previousSecret or approximate ~= previousApproximate then
+        if approximate then
+            distanceLabel:SetText(edge == "<" and "< Secret" or (edge == ">" and "Secret >" or "Secret"))
+        else
+            distanceLabel:SetText(distanceText(yards, edge, secret and "Secret" or nil))
+        end
+        previousYards, previousEdge, previousSecret, previousApproximate = yards, edge, secret, approximate
     end
 
-    local size = math.max(5, 9 - math.floor(distance / 200))
+    local size = approximate and 6 or math.max(5, 9 - math.floor(distance / 200))
     if size ~= previousSize then
         setLine(diamond[1], waypoint, 0, size, size, 0)
         setLine(diamond[2], waypoint, size, 0, 0, -size)
@@ -406,10 +420,13 @@ end
 local function resolveSecret()
     secretContinent, secretX, secretY = nil, nil, nil
     secretBearing, secretDistance = nil, nil
+    secretZone = nil
     if secretTracker then
         local step, waypoint = secretTracker:GetCurrentStep()
         secretStep = step
+        secretReveal = secretTracker:GetReveal()
         if waypoint then
+            secretZone = ns.SecretWaypointZone(waypoint)
             local ok, continent, x, y = pcall(worldCoordinates, waypoint.mapID, waypoint.x, waypoint.y)
             if ok then
                 secretContinent, secretX, secretY = continent, x, y
@@ -669,6 +686,7 @@ end
 
 local secretStatus
 local function updateSecretStatus(heading)
+    local available = heading ~= nil and secretBearing ~= nil
     local status = ""
     if secretStep then
         if testTargets then
@@ -676,18 +694,47 @@ local function updateSecretStatus(heading)
         elseif not settings.enabled or settings.opacity == 0 then
             status = "The HUD is hidden."
         elseif #secretStep.waypoints > 0 then
-            if heading and secretBearing then
+            if available then
                 status = "Follow the Secret marker on your compass."
             else
-                status = "Bearing unavailable here. Use the map location."
+                status = "Bearing unavailable here. Check the destination."
             end
         end
     end
-    if status ~= secretStatus then
+    if status ~= secretStatus or available ~= secretBearingAvailable then
         secretStatus = status
+        secretBearingAvailable = available
         if secretsUI then
             secretsUI:RefreshStatus()
         end
+    end
+end
+
+local huntStep, huntDestination
+local function updateHuntClue()
+    if not secretStep or testTargets then
+        if huntClue:IsShown() then
+            huntClue:Hide()
+        end
+        return
+    end
+    local destination = not secretBearingAvailable and secretZone or nil
+    if huntStep ~= secretStep or huntDestination ~= destination then
+        local route, index = secretTracker:GetRoute()
+        local clue = secretStep.clue or "Follow the next lead."
+        local text = ("%d/%d  %s"):format(index, #route.steps, clue)
+        if destination then
+            text = text .. "\n" .. destination
+            local access = secretStep.travelHint
+            if access then
+                text = text .. "\n" .. (#text + #access <= 178 and access or "Open Secrets for the access hint.")
+            end
+        end
+        huntClue:SetText(text)
+        huntStep, huntDestination = secretStep, destination
+    end
+    if not huntClue:IsShown() then
+        huntClue:Show()
     end
 end
 
@@ -695,12 +742,13 @@ local function render()
     local heading = getHeading()
     updateHeading(heading)
     if secretStep and not testTargets then
-        updateWaypoint(heading, secretBearing, secretDistance, true)
+        updateWaypoint(heading, secretBearing, secretDistance, true, secretReveal == "clue")
     else
         updateWaypoint(heading, bearing, distance)
     end
     renderQuests(heading)
     updateSecretStatus(heading)
+    updateHuntClue()
 end
 
 local headingElapsed, waypointElapsed = 0, 0
@@ -967,6 +1015,22 @@ local function setPreference(key, value)
     refreshSettingsUI()
 end
 
+BINDING_HEADER_SECRETCOMPASS = "SecretCompass"
+BINDING_NAME_SECRETCOMPASS_NEXT_STEP = "Next Secret Step"
+
+function SecretCompassNextStep()
+    if not secretTracker then
+        return
+    end
+    local route, index = secretTracker:GetRoute()
+    if route and index == #route.steps then
+        secretTracker:Stop()
+        secretsUI:ShowFinished()
+    else
+        secretTracker:Step(1)
+    end
+end
+
 local function initSecrets()
     if not ns.CreateSecretTracker or not ns.CreateSecretsUI then
         return
@@ -995,7 +1059,17 @@ local function initSecrets()
     secretsUI = ns.CreateSecretsUI({
         getRoute = function() return secretTracker:GetRoute() end,
         getCurrentStep = function() return secretTracker:GetCurrentStep() end,
+        getReveal = function() return secretTracker:GetReveal() end,
+        setReveal = function(level) secretTracker:SetReveal(level) end,
+        getSuggested = function() return secretTracker:GetSuggestedStep() end,
+        jumpSuggested = function()
+            local index = secretTracker:GetSuggestedStep()
+            if index then
+                secretTracker:Jump(index)
+            end
+        end,
         status = function() return secretStatus end,
+        hasBearing = function() return secretBearingAvailable end,
         hudHidden = function() return not settings.enabled or settings.opacity == 0 end,
         enableHUD = function()
             if settings.opacity == 0 then
@@ -1006,15 +1080,7 @@ local function initSecrets()
         canStart = function() return standaloneRoute() ~= nil end,
         start = function() secretTracker:Track(standaloneRoute()) end,
         step = function(delta) secretTracker:Step(delta) end,
-        next = function()
-            local route, index = secretTracker:GetRoute()
-            if route and index == #route.steps then
-                secretTracker:Stop()
-                secretsUI:ShowFinished()
-            else
-                secretTracker:Step(1)
-            end
-        end,
+        next = SecretCompassNextStep,
         stop = function() secretTracker:Stop() end,
         cycle = function() secretTracker:CycleLocation() end,
     })
@@ -1047,10 +1113,12 @@ SlashCmdList.SECRETCOMPASS = function(message)
         settingsUI:Toggle()
     elseif command == "secrets" and secretsUI then
         secretsUI:Toggle()
+    elseif command == "next" then
+        SecretCompassNextStep()
     elseif command == "test" or command:match("^test%s") then
         handleTestCommand(command:match("^test%s*(.*)$"))
     else
-        print("SecretCompass: /secretcompass toggle, /secretcompass move, /secretcompass reset, /secretcompass test, /secretcompass settings, /secretcompass secrets")
+        print("SecretCompass: /secretcompass toggle, /secretcompass move, /secretcompass reset, /secretcompass test, /secretcompass settings, /secretcompass secrets, /secretcompass next")
     end
 end
 

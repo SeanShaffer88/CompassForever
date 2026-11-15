@@ -27,11 +27,49 @@ local function selectedEntry(entries, url)
     return match
 end
 
+local function openingMatches(step, expected)
+    if not isTable(step) or not isTable(step.questIDs) or #step.questIDs ~= 2 then
+        return false
+    end
+    local first, second = step.questIDs[1], step.questIDs[2]
+    local waypoint = ns.NormalizeSecretWaypoint(step.waypoint)
+    local questID = expected.completionQuestID
+    return waypoint and waypoint.mapID == expected.waypoints[1].mapID and readable(first) and readable(second)
+        and (first == questID or second == questID)
+end
+
+local function cozyAnnotations(entry, faction)
+    local cozy = faction and ns.StandaloneSecrets()[1]
+    if not cozy or entry.guideURL ~= cozy.sourceURL or not readable(entry.questID) or entry.questID ~= 79976 then
+        return
+    end
+    local annotations = {}
+    local byQuest = {}
+    for index = 3, #cozy.steps do
+        local step = cozy.steps[index]
+        byQuest[step.completionQuestID] = step
+    end
+    local opening = entry.steps[1]
+    if isTable(opening) and isTable(opening.factionSubsteps) then
+        local children = opening.factionSubsteps[faction]
+        if isTable(children) and #children == 2
+            and openingMatches(children[1], cozy.steps[1]) and openingMatches(children[2], cozy.steps[2]) then
+            annotations[opening] = {
+                clue = "Find the first trace left by a traveller.",
+                completionQuestID = cozy.steps[1].completionQuestID, completionOnAccept = true,
+            }
+            annotations[children[1]], annotations[children[2]] = cozy.steps[1], cozy.steps[2]
+        end
+    end
+    return annotations, byQuest
+end
+
 local function makeRoute(entry)
     if not isTable(entry.steps) then
         return nil
     end
     local faction = ns.SecretFaction()
+    local cozy, cozyByQuest = cozyAnnotations(entry, faction)
     local steps, remaining = {}, maxNodes
     local function append(list, depth)
         if depth > maxDepth or not isTable(list) then
@@ -67,7 +105,22 @@ local function makeRoute(entry)
                 end
                 local hasChildren = isTable(children) and #children > 0
                 if #waypoints > 0 or (readable(raw.note) and raw.note) or not hasChildren then
-                    steps[#steps + 1] = { title = raw.label, note = raw.note, waypoints = waypoints }
+                    local questID = not hasChildren and readable(raw.questID) and raw.questID or nil
+                    local annotation = cozy and cozy[raw]
+                    if not annotation and cozyByQuest and type(questID) == "number" then
+                        annotation = cozyByQuest[questID]
+                    end
+                    -- Rekindle is optional in the verified Cozy Sleeping Bag guide.
+                    local optional = cozy and questID == 80001
+                    -- The pinned host's StepQuestCompleted treats its single questID as a turn-in check.
+                    steps[#steps + 1] = {
+                        title = raw.label, note = raw.note, waypoints = waypoints,
+                        clue = annotation and annotation.clue,
+                        travelHint = annotation and annotation.travelHint,
+                        completionQuestID = annotation and annotation.completionQuestID or questID,
+                        completionOnAccept = annotation and annotation.completionOnAccept,
+                        optional = optional,
+                    }
                 end
                 if hasChildren then
                     append(children, depth + 1)

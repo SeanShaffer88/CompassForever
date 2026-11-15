@@ -1,5 +1,6 @@
 local _, ns = ...
-local maxSteps, maxLocations = 128, 24
+local maxSteps, maxLocations, maxRevealRoutes = 128, 24, 256
+local revealLevels = { clue = true, distance = true, coordinates = true, full = true }
 
 local function readable(value)
     return not (issecretvalue and issecretvalue(value))
@@ -8,6 +9,14 @@ end
 local function finite(value)
     return readable(value) and type(value) == "number" and value == value
         and value > -math.huge and value < math.huge
+end
+
+local function validID(value)
+    return finite(value) and value >= 1 and value <= 2147483647 and value == math.floor(value)
+end
+
+local function validReveal(value)
+    return readable(value) and type(value) == "string" and revealLevels[value] == true
 end
 
 local function safeText(value, limit)
@@ -37,7 +46,7 @@ function ns.NormalizeSecretWaypoint(waypoint)
         return nil
     end
     local mapID, x, y = waypoint.mapID, waypoint.x, waypoint.y
-    if finite(mapID) and mapID >= 1 and mapID <= 2147483647 and mapID == math.floor(mapID)
+    if validID(mapID)
         and finite(x) and x >= 0 and x <= 1 and finite(y) and y >= 0 and y <= 1 then
         return { mapID = mapID, x = x, y = y, label = safeText(waypoint.label, 120) }
     end
@@ -67,7 +76,17 @@ function ns.NormalizeSecretRoute(route)
                 end
             end
             if title or note or #waypoints > 0 then
-                steps[#steps + 1] = { title = title or ("Step %d"):format(#steps + 1), note = note, waypoints = waypoints }
+                local questID = validID(raw.completionQuestID) and raw.completionQuestID or nil
+                steps[#steps + 1] = {
+                    title = title or ("Step %d"):format(#steps + 1),
+                    note = note,
+                    clue = safeText(raw.clue, 300),
+                    travelHint = safeText(raw.travelHint, 240),
+                    completionQuestID = questID,
+                    completionOnAccept = questID and readable(raw.completionOnAccept) and raw.completionOnAccept == true or nil,
+                    optional = readable(raw.optional) and raw.optional == true or nil,
+                    waypoints = waypoints,
+                }
             end
         end
     end
@@ -91,8 +110,36 @@ local function boundedIndex(index, limit)
     return finite(index) and math.max(1, math.min(limit, math.floor(index))) or 1
 end
 
+local function questCheck(check, questID)
+    if type(check) == "function" then
+        local ok, completed = pcall(check, questID)
+        return ok and readable(completed) and completed == true
+    end
+    return false
+end
+
+local function verifiedComplete(step)
+    local questID = step.completionQuestID
+    return questID and C_QuestLog and
+        (questCheck(C_QuestLog.IsQuestFlaggedCompleted, questID)
+            or (step.completionOnAccept and questCheck(C_QuestLog.IsOnQuest, questID)))
+end
+
 function ns.CreateSecretTracker(savedState, onChanged)
     local tracker = {}
+    local reveals, revealCount = {}, 0
+    if readable(savedState.reveals) and type(savedState.reveals) == "table" then
+        for id, level in pairs(savedState.reveals) do
+            if revealCount == maxRevealRoutes then
+                break
+            end
+            if readable(id) and type(id) == "string" and safeText(id, 404) == id and validReveal(level) and level ~= "clue" then
+                reveals[id] = level
+                revealCount = revealCount + 1
+            end
+        end
+    end
+    savedState.reveals = reveals
     local function select(route, index, locationIndex)
         savedState.route = route
         savedState.index = route and boundedIndex(index, #route.steps) or nil
@@ -114,6 +161,53 @@ function ns.CreateSecretTracker(savedState, onChanged)
         end
     end
 
+    function tracker:GetReveal()
+        local route = self:GetRoute()
+        return route and reveals[route.id] or "clue"
+    end
+
+    function tracker:SetReveal(level)
+        local route = self:GetRoute()
+        if not route or not validReveal(level) or self:GetReveal() == level then
+            return false
+        end
+        local id = route.id
+        if level == "clue" then
+            reveals[id] = nil
+            revealCount = revealCount - 1
+        elseif reveals[id] then
+            reveals[id] = level
+        else
+            if revealCount == maxRevealRoutes then
+                reveals[next(reveals)] = nil
+                revealCount = revealCount - 1
+            end
+            reveals[id] = level
+            revealCount = revealCount + 1
+        end
+        onChanged()
+        return true
+    end
+
+    function tracker:GetSuggestedStep()
+        local route, selected = self:GetRoute()
+        if route then
+            local hasRequiredStep = false
+            for index, step in ipairs(route.steps) do
+                if not step.optional then
+                    hasRequiredStep = true
+                    if not verifiedComplete(step) then
+                        if index > selected then
+                            return index
+                        end
+                        return
+                    end
+                end
+            end
+            return nil, hasRequiredStep
+        end
+    end
+
     function tracker:Track(route)
         local clean = ns.NormalizeSecretRoute(route)
         if not clean then
@@ -131,10 +225,18 @@ function ns.CreateSecretTracker(savedState, onChanged)
 
     function tracker:Step(delta)
         local route, index = self:GetRoute()
-        if not route or (delta ~= -1 and delta ~= 1) or not route.steps[index + delta] then
+        if not route or (delta ~= -1 and delta ~= 1) then
             return false
         end
-        select(route, index + delta)
+        return self:Jump(index + delta)
+    end
+
+    function tracker:Jump(index)
+        local route, selected = self:GetRoute()
+        if not route or not finite(index) or index ~= math.floor(index) or not route.steps[index] or index == selected then
+            return false
+        end
+        select(route, index)
         onChanged()
         return true
     end
@@ -161,8 +263,11 @@ function ns.CreateSecretTracker(savedState, onChanged)
     return tracker
 end
 
-local function routeStep(title, note, mapID, x, y, label)
-    return { title = title, note = note, waypoints = { { mapID = mapID, x = x, y = y, label = label } } }
+local function routeStep(title, note, waypoint, clue, completionQuestID, travelHint)
+    return {
+        title = title, note = note, waypoints = { waypoint },
+        clue = clue, completionQuestID = completionQuestID, travelHint = travelHint,
+    }
 end
 
 function ns.StandaloneSecrets()
@@ -172,39 +277,57 @@ function ns.StandaloneSecrets()
     if not faction then
         return {}
     end
-    local westfall = faction == "alliance"
+    local alliance = faction == "alliance"
+    local chainStart = alliance and 79008 or 79007
+    local westfall = { mapID = 1436, x = 0.3714, y = 0.5013, label = "Westfall" }
+    local barrens = { mapID = 1413, x = 0.4612, y = 0.7432, label = "The Barrens" }
+    local wall = { mapID = 1424, x = 0.8736, y = 0.4962, label = "Thoradin's Wall" }
+    local wallAccess = "On the Hillsbrad side of Thoradin's Wall, look for a broken cart where the wall is damaged."
     local remains = "Accept the quest from the Burned-Out Remains "
     local nextQuest = "Turn in the note at the other set of remains and pick up Stepping Stones."
-    local start = westfall
+    local start = alliance
         and routeStep("Begin at Alexston Farmstead", remains .. "beside the wrecked cart in Westfall.",
-            1436, 0.3714, 0.5013, "Westfall")
+            westfall, "Look for what remains of a journey interrupted among the farm fields.", chainStart,
+            "Reach Westfall from western Elwynn Forest, then head toward the farm fields.")
         or routeStep("Begin south of Camp Taurajo", remains .. "inside the scorched tower in the Barrens.",
-            1413, 0.4612, 0.7432, "The Barrens")
-    local swap = westfall
+            barrens, "An old watch post still carries signs of a fire.", chainStart,
+            "In the Barrens, follow the road south past Camp Taurajo.")
+    start.completionOnAccept = true
+    local swap = alliance
         and routeStep("Cross to the Barrens", nextQuest .. " Look for the wooden board near the tower.",
-            1413, 0.4612, 0.7432, "The Barrens")
+            barrens, "The note points toward another site touched by fire.", chainStart,
+            "From the Eastern Kingdoms, the Booty Bay boat lands at Ratchet in the Barrens.")
         or routeStep("Cross to Westfall", nextQuest .. " Search beside the destroyed cart at Alexston Farmstead.",
-            1436, 0.3714, 0.5013, "Westfall")
+            westfall, "The note points to a traveller who never made it past the fields.", chainStart,
+            "From Kalimdor, the Orgrimmar zeppelin to Grom'gol reaches the Eastern Kingdoms. Westfall lies to the north.")
     local steps = {
         start, swap,
         routeStep("Find the Stonetalon camp",
             "Follow the trail northeast of Sun Rock Retreat and check the Pocket Litter on a crate. "
                 .. "Finish Stepping Stones and pick up Scramble. You can also rekindle the campfire for an optional quest.",
-            1442, 0.406, 0.526, "Approximate camp location"),
+            { mapID = 1442, x = 0.406, y = 0.526, label = "Approximate camp location" },
+            "Search for a sign that someone sheltered among the high trails.", 79192,
+            alliance and "From the Barrens, take the western road into Stonetalon and look for the trail northeast of Sun Rock Retreat."
+                or "From the Eastern Kingdoms, the Grom'gol zeppelin reaches Orgrimmar. The Barrens road leads west into Stonetalon."),
         routeStep("Reach the Mound of Dirt",
             "Climb north from the camp and jump across to the mound. Complete Scramble and accept Wet Job.",
-            1442, 0.3961, 0.4988, "Stonetalon Mountains"),
+            { mapID = 1442, x = 0.3961, y = 0.4988 },
+            "Look above the camp for a patch of disturbed earth.", 79980,
+            "Start from the camp northeast of Sun Rock Retreat and follow the uphill trail."),
         routeStep("Find the Eagle Figurine",
             "At the Loch Modan dam, use the carved heads on the Wetlands side to reach the figurine. "
                 .. "Finish Wet Job and take Eagle's Fist.",
-            1432, 0.4945, 0.1291, "Loch Modan"),
+            { mapID = 1432, x = 0.4945, y = 0.1291 },
+            "Look for an eagle where old stone holds back the water.", 79974,
+            alliance and "Loch Modan is east of Dun Morogh. Approach the dam from the north end of the loch."
+                or "From Kalimdor, the Orgrimmar zeppelin to Undercity reaches the Eastern Kingdoms. The dam is at the north end of Loch Modan."),
         routeStep("Reach the Messenger Bag",
             "Climb the cart on the Hillsbrad side of Thoradin's Wall. Go through the opening and look right "
                 .. "for the hanging bag. Finish Eagle's Fist and accept This Must Be The Place.",
-            1424, 0.8736, 0.4962, "Thoradin's Wall"),
+            wall, "A traveller's belongings hang above an old border crossing.", 79975, wallAccess),
         routeStep("Collect the Cozy Sleeping Bag",
             "Use the Hastily Rolled-Up Satchel below the Messenger Bag to finish the quest.",
-            1424, 0.8736, 0.4962, "Thoradin's Wall"),
+            wall, "Look below the last find for one final bundle.", 79976, wallAccess),
     }
     return { ns.NormalizeSecretRoute({
         id = "cozy-sleeping-bag:" .. faction,

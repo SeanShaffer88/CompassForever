@@ -20,9 +20,9 @@ local function button(parent, caption, width, x, y, onClick)
     return control
 end
 
-local function waypointText(waypoint)
+local function waypointZone(waypoint)
     if not waypoint then
-        return "No mapped location for this step."
+        return
     end
     local zone
     if C_Map.GetMapInfo then
@@ -34,8 +34,21 @@ local function waypointText(waypoint)
     if (issecretvalue and issecretvalue(zone)) or type(zone) ~= "string" or zone == "" then
         zone = "Map " .. waypoint.mapID
     end
+    return zone
+end
+
+namespace.SecretWaypointZone = waypointZone
+
+local function waypointText(waypoint, reveal, bearingAvailable)
+    local zone = waypointZone(waypoint)
+    if not zone then
+        return "No Mapped Location"
+    end
+    if reveal ~= "coordinates" and reveal ~= "full" then
+        return not bearingAvailable and ("Destination: " .. zone) or ""
+    end
     local coordinates = ("%.1f, %.1f"):format(waypoint.x * 100, waypoint.y * 100)
-    if waypoint.label and waypoint.label ~= "" then
+    if reveal == "full" and waypoint.label and waypoint.label ~= "" then
         return ("%s · %s (%s)"):format(waypoint.label, zone, coordinates)
     end
     return ("%s (%s)"):format(zone, coordinates)
@@ -43,7 +56,7 @@ end
 
 local function makePanel(api)
     local panel = CreateFrame("Frame", panelName, UIParent)
-    panel:SetSize(424, 301)
+    panel:SetSize(424, 401)
     panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 34, -126)
     panel:SetFrameStrata("DIALOG")
     panel:SetClampedToScreen(true)
@@ -102,7 +115,9 @@ local function makePanel(api)
     panel.noteBody = noteBody
     panel.locationText = label(panel, "GameFontHighlightSmall", 18, -205, 388, 28)
     panel.locationText:SetTextColor(0.52, 0.90, 1)
-    panel.status = label(panel, "GameFontHighlightSmall", 18, -238, 272, 26)
+    panel.travel = label(panel, "GameFontHighlightSmall", 18, -233, 388, 31)
+    panel.travel:SetTextColor(0.74, 0.77, 0.76)
+    panel.status = label(panel, "GameFontHighlightSmall", 18, -270, 272, 30)
     panel.status:SetTextColor(0.74, 0.77, 0.76)
 
     local controls = {}
@@ -115,11 +130,17 @@ local function makePanel(api)
     end
 
     controls.start = button(panel, "Track Cozy Sleeping Bag", 175, 18, -157, api.start)
-    controls.previous = button(panel, "Previous", 85, 18, -268, function() api.step(-1) end)
-    controls.next = button(panel, "Next", 85, 108, -268, api.next)
-    controls.stop = button(panel, "Stop", 70, 198, -268, api.stop)
-    controls.location = button(panel, "Next Location", 132, 274, -268, api.cycle)
-    controls.enableHUD = button(panel, "Show HUD", 108, 298, -233, api.enableHUD)
+    controls.previous = button(panel, "Previous", 85, 18, -365, function() api.step(-1) end)
+    controls.next = button(panel, "Next", 85, 108, -365, api.next)
+    controls.stop = button(panel, "Stop", 70, 198, -365, api.stop)
+    controls.location = button(panel, "Next Location", 132, 274, -365, api.cycle)
+    controls.enableHUD = button(panel, "Show HUD", 108, 298, -265, api.enableHUD)
+    controls.revealClue = button(panel, "Clue", 84, 18, -300, function() api.setReveal("clue") end)
+    controls.revealDistance = button(panel, "Distance", 91, 107, -300, function() api.setReveal("distance") end)
+    controls.revealCoordinates = button(panel, "Coordinates", 111, 203, -300, function() api.setReveal("coordinates") end)
+    controls.revealFull = button(panel, "Full", 87, 319, -300, function() api.setReveal("full") end)
+    controls.suggested = button(panel, "Go to Suggested Step", 176, 18, -331, api.jumpSuggested)
+    panel.suggestion = label(panel, "GameFontHighlightSmall", 203, -336, 204, 23)
 
     local function nudge(pixels)
         local limit = panel.noteBody:GetHeight() - noteScroll:GetHeight()
@@ -145,29 +166,39 @@ function namespace.CreateSecretsUI(api)
             return
         end
         local route, index, locationIndex = api.getRoute()
-        local step, waypoint = api.getCurrentStep()
+        local step = api.getCurrentStep()
         local tracking = route ~= nil and step ~= nil
         local controls = panel.controls
+        local reveal = api.getReveal()
         if tracking then
             finished = nil
             panel.routeTitle:SetText(route.title)
             panel.progress:SetText(("Step %d of %d"):format(index, #route.steps))
-            panel.stepTitle:SetText(step.title)
-            panel.note:SetText(step.note or "")
-            panel.locationText:SetText(waypointText(waypoint))
+            panel.stepTitle:SetText(reveal == "full" and step.title or (step.clue or "Follow the next lead."))
+            panel.note:SetText(reveal == "full" and step.note or "")
             if #step.waypoints > 1 then
                 local location = ("Location %d of %d"):format(locationIndex, #step.waypoints)
                 panel.progress:SetText(("%s · %s"):format(panel.progress:GetText(), location))
             end
             controls.previous:SetEnabled(index > 1)
             controls.next:SetText(index < #route.steps and "Next" or "Finish")
+            local suggested, allComplete = api.getSuggested()
+            controls.suggested:SetShown(suggested ~= nil and suggested > index)
+            if suggested and suggested > index then
+                panel.suggestion:SetText(("Verified progress suggests step %d."):format(suggested))
+            elseif allComplete then
+                panel.suggestion:SetText("All required steps are verified complete.")
+            else
+                panel.suggestion:SetText("")
+            end
         else
             panel.routeTitle:SetText("Choose a Secret")
             panel.progress:SetText("")
             panel.stepTitle:SetText(finished and "Route finished. Choose another secret when you are ready."
                 or "Start the Cozy Sleeping Bag route here, or use Track Secret in SecretChecklist.")
             panel.note:SetText("")
-            panel.locationText:SetText("")
+            controls.suggested:Hide()
+            panel.suggestion:SetText("")
         end
         local canStart = not tracking and api.canStart()
         controls.start:SetShown(canStart)
@@ -178,6 +209,14 @@ function namespace.CreateSecretsUI(api)
         controls.next:SetShown(tracking)
         controls.stop:SetShown(tracking)
         controls.location:SetShown(tracking and #step.waypoints > 1)
+        controls.revealClue:SetShown(tracking)
+        controls.revealDistance:SetShown(tracking)
+        controls.revealCoordinates:SetShown(tracking)
+        controls.revealFull:SetShown(tracking)
+        controls.revealClue:SetEnabled(reveal ~= "clue")
+        controls.revealDistance:SetEnabled(reveal ~= "distance")
+        controls.revealCoordinates:SetEnabled(reveal ~= "coordinates")
+        controls.revealFull:SetEnabled(reveal ~= "full")
         local noteHeight = math.ceil(panel.note:GetStringHeight())
         local notesOverflow = noteHeight > panel.noteScroll:GetHeight()
         panel.noteBody:SetHeight(math.max(noteHeight, panel.noteScroll:GetHeight()))
@@ -191,10 +230,13 @@ function namespace.CreateSecretsUI(api)
 
     function ui:RefreshStatus()
         if panel then
-            local track = api.getCurrentStep() ~= nil
-            local hidden = track and api.hudHidden()
+            local step, waypoint = api.getCurrentStep()
+            local hidden = step ~= nil and api.hudHidden()
+            local bearingAvailable = api.hasBearing()
             panel.controls.enableHUD:SetShown(hidden)
-            panel.status:SetText(track and api.status() or "")
+            panel.status:SetText(step and api.status() or "")
+            panel.locationText:SetText(step and waypointText(waypoint, api.getReveal(), bearingAvailable) or "")
+            panel.travel:SetText(step and not bearingAvailable and step.travelHint or "")
         end
     end
 

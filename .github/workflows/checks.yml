@@ -21,5 +21,6 @@ jobs:
         run: |
           grep -Fxq '## Interface: 16001' SecretCompass/SecretCompass.toc
           test -s SecretCompass/Media/MinimapCompass.tga
+          test -s SecretCompass/Bindings.xml
           luac5.1 -p SecretCompass/Styles.lua SecretCompass/Settings.lua SecretCompass/Secrets.lua SecretCompass/SecretsUI.lua SecretCompass/SecretChecklistBridge.lua SecretCompass/SecretCompass.lua tests/CompassHarness.lua
           lua5.1 tests/CompassHarness.lua SecretCompass
