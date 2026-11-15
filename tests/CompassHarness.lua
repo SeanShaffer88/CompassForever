@@ -963,7 +963,9 @@ do
         ["musical-gustjumper"] = { {2521, 515, 723} },
         ["night-watchmans-torch"] = { {1431, 287, 333} },
         ["lyn-the-ignored"] = { {1421, 448, 678}, {1421, 634, 643}, {1416, 85, 593} },
-        ["dawn-waker-eluviana"] = { {2521, 417, 234}, {2521, 476, 719} },
+        ["dawn-waker-eluviana"] = {
+            {2521, 417, 234}, {2521, 476, 719}, {1447, 660, 541}, {2482, 727, 372}, {2521, 583, 245},
+        },
     }
     for _, side in ipairs({ "Horde", "Alliance" }) do
         faction = side
@@ -990,6 +992,23 @@ do
             "Interior puzzle and summon steps have landmark instructions")
         assert(#choices[5].steps[1].waypoints == 9 and #choices[7].steps[4].waypoints == 5,
             "Spawn alternatives stay in the same step")
+        local dawn = choices[7]
+        local isAlliance = side == "Alliance"
+        local total = isAlliance and 23 or 22
+        assert(dawn.ongoing and #dawn.steps == total
+            and dawn.steps[6].waypoints[1].mapID == (isAlliance and 1439 or 1440),
+            "Dawn Waker follows the appropriate water globe branch")
+        assert(dawn.steps[total - 1].waypoints[1].mapID == 2521
+            and dawn.steps[total].title == "Trail Goes Cold" and #dawn.steps[total].waypoints == 0,
+            "The route reaches the Altairus ritual and ends without an unverified waypoint")
+        local legacy = namespace.CreateSecretTracker({
+            finishedRoutes = { [dawn.id] = { sourceURL = dawn.sourceURL } },
+        }, function() end)
+        assert(not legacy:HasFinished(dawn) and legacy:GetResumeStep(dawn) == 6 and legacy:Track(dawn),
+            "The previous Eluvi'ana finish is a resume point")
+        local _, resume = legacy:GetRoute()
+        assert(resume == 6 and legacy:Jump(total) and not legacy:Finish() and legacy:Stop()
+            and legacy:GetResumeStep(dawn) == total, "Explicit pauses take precedence over legacy chapter progress")
     end
     faction = "Horde"
     assert(secrets.progress:GetText() == "0 of 7 Built-In Routes Finished")
@@ -1007,6 +1026,27 @@ do
     click(torch)
     assert(SecretCompassSecretDB.index == 1 and SecretCompassSecretDB.locationIndex == 4,
         "Resuming a standalone route keeps the selected spawn alternative")
+    click(secrets.controls.stop)
+
+    local dawn = secrets.controls.routes["dawn-waker-eluviana"]
+    click(dawn)
+    slash("step 4")
+    click(secrets.controls.location)
+    local active = SecretCompassSecretDB.route
+    active.ongoing, active.legacyResumeStep = nil, nil
+    active.title = "Dawn Waker: Eluvi'ana"
+    for index = #active.steps, 6, -1 do active.steps[index] = nil end
+    fireAddonEvent("PLAYER_ENTERING_WORLD")
+    assert(#SecretCompassSecretDB.route.steps == 22 and SecretCompassSecretDB.index == 4
+        and SecretCompassSecretDB.locationIndex == 2, "Entering world upgrades the active route snapshot in place")
+    slash("step 22")
+    assert(secrets.controls.next.enabled == false and secrets.controls.next:GetText() == "Known End"
+        and not secrets.controls.mapCommand:IsVisible(), "The cold trail offers no further action or map pin")
+    slash("next")
+    click(secrets.controls.revealFull)
+    assert(SecretCompassSecretDB.index == 22 and secrets.stepTitle:GetText() == "Trail Goes Cold"
+        and not SecretCompassSecretDB.finishedRoutes["dawn-waker-eluviana"],
+        "The Next binding cannot finish the ongoing route")
     click(secrets.controls.stop)
 end
 acceptedQuests[79007] = true

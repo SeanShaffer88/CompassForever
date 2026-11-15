@@ -92,7 +92,13 @@ function ns.NormalizeSecretRoute(route)
         end
     end
     if #steps > 0 then
-        return { id = id, title = title, steps = steps, sourceURL = safeURL(route.sourceURL) }
+        local ongoing = readable(route.ongoing) and route.ongoing == true or nil
+        local legacyResumeStep = ongoing and validID(route.legacyResumeStep)
+            and route.legacyResumeStep <= #steps and route.legacyResumeStep or nil
+        return {
+            id = id, title = title, steps = steps, sourceURL = safeURL(route.sourceURL),
+            ongoing = ongoing, legacyResumeStep = legacyResumeStep,
+        }
     end
 end
 
@@ -323,17 +329,29 @@ function ns.CreateSecretTracker(savedState, onChanged)
         end
     end
 
+    local function hasFinishRecord(route)
+        local finished = finishedRoutes[route.id]
+        return finished ~= nil and finished.sourceURL == route.sourceURL
+    end
+
+    local function resumeStep(route, checkpoint)
+        local index, location = matchingCheckpoint(route, checkpoint)
+        if not index and route.legacyResumeStep and hasFinishRecord(route) then
+            return route.legacyResumeStep
+        end
+        return index, location
+    end
+
     function tracker:GetResumeStep(route)
         local clean = ns.NormalizeSecretRoute(route)
         if clean then
-            return matchingCheckpoint(clean, checkpoints[clean.id])
+            return resumeStep(clean, checkpoints[clean.id])
         end
     end
 
     function tracker:HasFinished(route)
         local clean = ns.NormalizeSecretRoute(route)
-        local finished = clean and finishedRoutes[clean.id]
-        return finished ~= nil and finished.sourceURL == clean.sourceURL
+        return clean ~= nil and not clean.ongoing and hasFinishRecord(clean)
     end
 
     function tracker:Track(route)
@@ -350,7 +368,7 @@ function ns.CreateSecretTracker(savedState, onChanged)
                 remember(previous, index, locationIndex)
             end
         end
-        local checkpointIndex, checkpointLocation = matchingCheckpoint(clean, checkpoint)
+        local checkpointIndex, checkpointLocation = resumeStep(clean, checkpoint)
         select(clean, checkpointIndex, checkpointLocation)
         onChanged()
         return true
@@ -397,7 +415,7 @@ function ns.CreateSecretTracker(savedState, onChanged)
 
     function tracker:Finish()
         local route, index = self:GetRoute()
-        if not route or index ~= #route.steps then
+        if not route or route.ongoing or index ~= #route.steps then
             return false
         end
         if not finishedRoutes[route.id] then
@@ -566,12 +584,14 @@ local function lynTheIgnoredRoute()
     })
 end
 
-local function dawnWakerEluvianaRoute()
+local function dawnWakerRoute(faction)
     local ealaane = { mapID = 2521, x = 0.6594, y = 0.7437, label = "Ealaane Nimbuswalker" }
-    return ns.NormalizeSecretRoute({
+    local route = {
         id = "dawn-waker-eluviana",
-        title = "Dawn Waker: Eluvi'ana",
+        title = "Dawn Waker (Known Steps)",
         sourceURL = "https://www.wowhead.com/forever/guide/dawn-waker-secret-walkthrough",
+        ongoing = true,
+        legacyResumeStep = 6,
         steps = {
             {
                 title = "Secure the Ancient Heirloom",
@@ -606,11 +626,131 @@ local function dawnWakerEluvianaRoute()
                 },
             },
             routeStep("Claim Eluvi'ana",
-                "Take the Ancient Skyborne Blade to Ealaane Nimbuswalker to receive Eluvi'ana. This completes "
-                    .. "the Eluvi'ana chapter of the ongoing Dawn Waker mystery.",
+                "Take the Ancient Skyborne Blade to Ealaane Nimbuswalker to receive Eluvi'ana. Keep the sword, "
+                    .. "the Ancient Hilt, and the Ancient Heirloom for the next part of the hunt.",
                 ealaane, "Return to the person who sent you looking."),
         },
+    }
+    local steps = route.steps
+    local function append(step)
+        steps[#steps + 1] = step
+    end
+
+    if faction == "alliance" then
+        append(routeStep("Gather Mathystral Amulet Fragments",
+            "Collect 20 Mathystral Amulet Fragments from Stormscale naga at the Ruins of Mathystra in Darkshore.",
+            { mapID = 1439, x = 0.594, y = 0.213, label = "Ruins of Mathystra search area" },
+            "Search the ruins for pieces of an old relic."))
+        append(routeStep("Summon Baron Marinous",
+            "Combine the 20 fragments at the Fathom Stone at the bottom of the spiral staircase. Use the "
+                .. "amulet there, defeat Baron Marinous, and loot the Clouded Water Globe.",
+            { mapID = 1439, x = 0.589, y = 0.226, label = "Fathom Stone approach" },
+            "Reassemble the relic where it belongs, then face what answers."))
+        append(routeStep("Recover the Befouled Water Globe from Onu",
+            "Turn in the quest from the Clouded Water Globe to Onu in the Grove of the Ancients, "
+                .. "then speak with him again to receive the Befouled Water Globe.",
+            { mapID = 1439, x = 0.436, y = 0.764, label = "Onu" },
+            "Ask a guardian of the grove about your find."))
+    else
+        append(routeStep("Recover the Strange Water Globe",
+            "Defeat Baron Aquanis in Blackfathom Deeps and loot the Strange Water Globe. If the Baron "
+                .. "has not appeared, a party member on Amongst the Ruins can use the Fathom Stone to summon him.",
+            { mapID = 1440, x = 0.145, y = 0.142, label = "Blackfathom Deeps exterior approach" },
+            "An elemental in a sunken ruin guards the next lead."))
+        append(routeStep("Recover the Befouled Water Globe from Je'neu",
+            "Turn in the quest from the Strange Water Globe to Je'neu Sancrea at Zoram'gar Outpost, "
+                .. "then speak with him again to receive the Befouled Water Globe.",
+            { mapID = 1440, x = 0.116, y = 0.342, label = "Je'neu Sancrea" },
+            "Bring your find to the coastal outpost and ask about it again."))
+    end
+
+    local spirit = { mapID = 1440, x = 0.1568, y = 0.1933, label = "Highborne Spirit" }
+    local mordent = { mapID = 2652, x = 0.3505, y = 0.4649, label = "Mordent Evenshade" }
+    local direMaulWest = { mapID = 1444, x = 0.603, y = 0.318, label = "Approximate Dire Maul West approach" }
+    append(routeStep("Speak with the Highborne Spirit",
+        "Equip the Ancient Heirloom ring and bring the Befouled Water Globe to the Highborne Spirit "
+            .. "at Zoram Strand in Ashenvale. Ask about the globe.",
+        spirit, "An old keepsake may let you speak to someone on the shore."))
+    append(routeStep("Recover Narassin's Tome",
+        "Climb the Tower of Althalaxx in Darkshore. Defeat Athrikus Narassin, loot the Azsharan Key, "
+            .. "and open the lockbox behind him to collect Narassin's Tome.",
+        { mapID = 1439, x = 0.564, y = 0.265, label = "Tower of Althalaxx approach" },
+        "The spirit's lead takes you to the top of an old tower."))
+    append(routeStep("Return to the Highborne Spirit",
+        "With the Ancient Heirloom equipped, return to the Highborne Spirit with Narassin's Tome.",
+        spirit, "Take what you found back to the shore."))
+    append(routeStep("Ask Mordent Evenshade About the Globe",
+        "Take the Ancient Hilt, Eluvi'ana, Narassin's Tome, and the Befouled Water Globe to Mordent "
+            .. "Evenshade in Shen'dralas. Speak with him about the three reagents needed to cleanse the globe. "
+            .. "You can collect them in any order and use Go to Step to switch between them.",
+        mordent, "Find a scholar who recognizes the objects you carry."))
+    append({
+        title = "Recover the Star of Elune",
+        note = "Bring five players to the Ruins of Isildien and equip the Ancient Heirloom ring to see the "
+            .. "Shen'dralar Vault and switches. Put four players at the switches and one at the vault. "
+            .. "Activate all four switches at the same time, then have the player at the vault loot the Star of Elune. "
+            .. "Use Next Location to see each switch.",
+        clue = "A sealed vault requires several people to act together.",
+        waypoints = {
+            { mapID = 1444, x = 0.585, y = 0.716, label = "Shen'dralar Vault" },
+            { mapID = 1444, x = 0.585, y = 0.710, label = "Ancient Switch on the Upper Floor" },
+            { mapID = 1444, x = 0.573, y = 0.717, label = "Ancient Switch" },
+            { mapID = 1444, x = 0.597, y = 0.720, label = "Ancient Switch" },
+            { mapID = 1444, x = 0.611, y = 0.736, label = "Ancient Switch" },
+        },
     })
+    append(routeStep("Recover the Abyssal Mote",
+        "Complete the quest chain from Kirith through Azsharite if you have not already done it. "
+            .. "It starts with the Fallen Hero of the Horde in the Swamp of Sorrows. Then open the "
+            .. "Abyssal Chest underwater in Azshara to loot the Abyssal Mote.",
+        { mapID = 1447, x = 0.660, y = 0.541, label = "Underwater Abyssal Chest" },
+        "Follow the old trail, then look beneath the water."))
+    append(routeStep("Gather Tears of Anguish",
+        "After speaking to Mordent, collect 20 Tears of Anguish from Anguished and Suffering Highborne "
+            .. "at Lake Kel'theril in Winterspring. The ring is optional for these drops.",
+        { mapID = 1452, x = 0.536, y = 0.432, label = "Lake Kel'theril search area" },
+        "Search around a frozen lake for what the spirits leave behind."))
+    append(routeStep("Report Back to Mordent",
+        "With the Star of Elune, Abyssal Mote, and 20 Tears of Anguish in your bags, return to "
+            .. "Mordent in Shen'dralas. He directs you to the cleansing shrine.",
+        mordent, "Bring your findings back to the scholar."))
+    append(routeStep("Cleanse the Water Globe",
+        "Bring the Befouled Water Globe and all three reagents to the Shrine of Coalescence in Hyjal. "
+            .. "Use the globe from your bags at the shrine to obtain the Cleansed Water Globe.",
+        { mapID = 2482, x = 0.727, y = 0.372, label = "Shrine of Coalescence" },
+        "The objects you gathered can be used at a shrine."))
+    append(routeStep("Show Mordent the Cleansed Globe",
+        "Take the Cleansed Water Globe to Mordent in Shen'dralas. Follow his new dialogue about "
+            .. "Narassin and Prince Tortheldrin.",
+        mordent, "Ask the scholar what the ritual revealed."))
+    append(routeStep("Speak with Prince Tortheldrin",
+        "Reach Prince Tortheldrin in the Capital Gardens, the west wing of Dire Maul. Ask him about "
+            .. "Eluvi'ana and Eluvi'tor before anyone defeats him. He mentions those honored in his court.",
+        direMaulWest, "A prince in the old gardens may know about the blades.",
+        nil, "This pin marks the exterior approach. The prince is inside the west wing."))
+    append(routeStep("Obtain the Arcanum of Binding",
+        "Obtain a Libram of Binding from Dire Maul enemies. In the Athenaeum, bring it, one Pristine Black Diamond, "
+            .. "two Large Brilliant Shards, and one Arcane Crystal to Lorekeeper Lydros for an Arcanum of Binding. "
+            .. "His Libram of Binding quest requires level 57 and completion of Elven Legends.",
+        direMaulWest, "A lorekeeper can turn a recovered libram into something useful.",
+        nil, "This pin marks the exterior approach. Lorekeeper Lydros is inside the Athenaeum."))
+    append(routeStep("Show the Bound Hilt to the Prince",
+        "Use the Arcanum of Binding on the Ancient Hilt, then speak to Prince Tortheldrin with the bound hilt "
+            .. "in your bags before anyone defeats him. He gives you the Scrawled Note.",
+        direMaulWest, "Bring the newly bound object back to the prince.",
+        nil, "This pin marks the exterior approach. The prince is inside the west wing."))
+    append(routeStep("Raise Eluvi'ana at Altairus",
+        "Return to Altairus at the Ruins of Ban'aethal with the bound hilt and Eluvi'ana. Place the hilt in front "
+            .. "of him and wait for his breath and departure. Click the placed hilt and finish the channel "
+            .. "to raise Eluvi'ana.",
+        { mapID = 2521, x = 0.583, y = 0.245, label = "Approximate Altairus Location" },
+        "Bring the hilt and blade back to the ruined site."))
+    append(routeStep("Trail Goes Cold",
+        "Raising Eluvi'ana at Altairus is the last confirmed action. The result of the ritual and the next step "
+            .. "are still unverified. Pause here to keep your place.",
+        nil, "You have reached the last confirmed lead."))
+
+    return ns.NormalizeSecretRoute(route)
 end
 
 function ns.StandaloneSecrets()
@@ -676,5 +816,5 @@ function ns.StandaloneSecrets()
         id = "cozy-sleeping-bag:" .. faction,
         title = "Cozy Sleeping Bag", sourceURL = source, steps = steps,
     }), alcazRoute(faction), scarletBannerRoute(), musicalGustjumperRoute(),
-        nightWatchmansTorchRoute(), lynTheIgnoredRoute(), dawnWakerEluvianaRoute() }
+        nightWatchmansTorchRoute(), lynTheIgnoredRoute(), dawnWakerRoute(faction) }
 end

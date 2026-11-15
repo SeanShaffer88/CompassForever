@@ -1057,8 +1057,9 @@ function SecretsCompassNextStep()
     end
     local route, index = secretTracker:GetRoute()
     if route and index == #route.steps then
-        secretTracker:Finish()
-        secretsUI:ShowFinished()
+        if secretTracker:Finish() then
+            secretsUI:ShowFinished()
+        end
     else
         secretTracker:Step(1)
     end
@@ -1265,6 +1266,15 @@ frame:SetScript("OnEvent", function(self, event, loadedAddon)
             })
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
+        local route = secretTracker and secretTracker:GetRoute()
+        if route and route.id == "dawn-waker-eluviana" and #route.steps == 5 and not route.ongoing then
+            for _, candidate in ipairs(ns.StandaloneSecrets()) do
+                if candidate.id == route.id and candidate.sourceURL == route.sourceURL then
+                    secretTracker:Track(candidate)
+                    break
+                end
+            end
+        end
         refreshSecretNavigation(true)
     elseif (settings.enabled or testTargets) and event == "USER_WAYPOINT_UPDATED" then
         readPin()

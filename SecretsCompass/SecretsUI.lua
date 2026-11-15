@@ -339,7 +339,9 @@ function namespace.CreateSecretsUI(api)
                 panel.progress:SetText(("%s · %s"):format(panel.progress:GetText(), location))
             end
             controls.previous:SetEnabled(index > 1)
-            controls.next:SetText(index < #route.steps and "Next" or "Finish")
+            local atKnownEnd = index == #route.steps and route.ongoing
+            controls.next:SetEnabled(not atKnownEnd)
+            controls.next:SetText(index < #route.steps and "Next" or (atKnownEnd and "Known End" or "Finish"))
             local suggested, allComplete = api.getSuggested()
             controls.suggested:SetShown(suggested ~= nil and suggested > index)
             if suggested and suggested > index then
