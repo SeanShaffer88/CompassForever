@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="SECRETCOMPASS_NEXT_STEP" header="SECRETSCOMPASS" category="ADDONS">
+        SecretsCompassNextStep()
+    </Binding>
+</Bindings>

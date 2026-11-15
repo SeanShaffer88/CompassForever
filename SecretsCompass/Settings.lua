@@ -1,6 +1,6 @@
 local addonName, namespace = ...
 
-local panelName = "CompassForeverSettings"
+local panelName = "SecretsCompassSettings"
 local previewDark = { 0.055, 0.063, 0.066 }
 local panelDark = { 0.102, 0.112, 0.115 }
 local panelBorder = { 0.40, 0.34, 0.23 }
@@ -175,7 +175,7 @@ local function makePanel(api)
     end
     drag:SetScript("OnDragStop", stopMoving)
     panel:SetScript("OnHide", stopMoving)
-    label(drag, "GameFontNormalLarge", "CompassForever", 18, -12)
+    label(drag, "GameFontNormalLarge", "SecretsCompass", 18, -12)
     panel.dragHandle = drag
 
     local close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
@@ -225,6 +225,13 @@ local function makePanel(api)
             api.set(key, self:GetChecked() and true or false)
         end)
         controls[key] = check
+    end
+
+    if api.openSecrets then
+        controls.secrets = button(panel, "Secrets", 134, 296, -318, function()
+            panel:Hide()
+            api.openSecrets()
+        end)
     end
 
     label(panel, "GameFontNormal", "HUD Transparency", 18, -354)
@@ -353,7 +360,7 @@ function namespace.CreateSettingsUI(api)
         if minimapButton or not Minimap then
             return
         end
-        minimapButton = CreateFrame("Button", "CompassForeverMinimapButton", Minimap)
+        minimapButton = CreateFrame("Button", "SecretsCompassMinimapButton", Minimap)
         minimapButton:SetSize(31, 31)
         minimapButton:SetPoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", 6, 6)
         minimapButton:SetFrameLevel(Minimap:GetFrameLevel() + 5)
@@ -373,7 +380,7 @@ function namespace.CreateSettingsUI(api)
         minimapButton:SetScript("OnEnter", function(self)
             if GameTooltip then
                 GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-                GameTooltip:SetText("CompassForever")
+                GameTooltip:SetText("SecretsCompass")
                 GameTooltip:AddLine("Left-click to show or hide the HUD", 1, 1, 1)
                 GameTooltip:AddLine("Right-click to open settings", 1, 1, 1)
                 GameTooltip:Show()

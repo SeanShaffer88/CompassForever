@@ -1,7 +1,7 @@
-# CompassForever
+# SecretsCompass
 
-CompassForever is a World of Warcraft: Forever addon that shows the bearing and distance to tracked quest objectives and your manual World Map pin.
+SecretsCompass leads you through WoW: Forever secrets one step at a time. Follow the built-in Cozy Sleeping Bag and Alcaz Operative Insignia routes, or select a guide in SecretChecklist.
 
-- [Download the installable ZIP from Releases](https://github.com/SeanShaffer88/CompassForever/releases)
-- [Installation and in-game controls](CompassForever/README.md)
+- [Install and use SecretsCompass](SecretsCompass/README.md)
 - [Preview the 12 HUD styles](CompassForever-Styles-Mockup.png)
+- [Historical CompassForever downloads](https://github.com/SeanShaffer88/SecretsCompass/releases)

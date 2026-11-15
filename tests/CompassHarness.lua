@@ -8,6 +8,7 @@ end
 math.atan2 = math.atan2 or atan2
 
 local methods = {}
+local frames = {}
 local function region(parent)
     return setmetatable({ parent = parent, shown = true, scripts = {}, events = {}, labels = {}, lines = {} },
         { __index = methods })
@@ -118,6 +119,7 @@ UISpecialFrames = {}
 function CreateFrame(_, name, parent, template)
     local frame = region(parent)
     if template == "UICheckButtonTemplate" then frame.Text = frame:CreateFontString() end
+    frames[#frames + 1] = frame
     if name then _G[name] = frame end
     return frame
 end
@@ -128,6 +130,13 @@ local facing, waypoint, unavailable, distantContinent, playerSamples
 local secret = {}
 function issecretvalue(value) return rawequal(value, secret) end
 function GetPlayerFacing() return facing end
+local faction = "Horde"
+function UnitFactionGroup(unit) assert(unit == "player"); return faction end
+C_Timer = { After = function(_, callback) callback() end }
+function methods:SetScrollChild(child) self.scrollChild = child end
+function methods:EnableMouseWheel() end
+function methods:SetVerticalScroll(value) self.scroll = value end
+function methods:GetVerticalScroll() return self.scroll or 0 end
 function CreateVector2D(x, y)
     return { x = x, y = y, GetXY = function(self) return self.x, self.y end }
 end
@@ -145,6 +154,9 @@ function GetQuestUiMapID(questID) return questMaps[questID] end
 C_SuperTrack = { GetSuperTrackedQuestID = function() return superTracked end }
 C_Map = {
     GetUserWaypoint = function() return waypoint end,
+    SetUserWaypoint = function() error("Routes must preserve the player's map pin") end,
+    ClearUserWaypoint = function() error("Routes must not clear the player's map pin") end,
+    GetMapInfo = function(id) return { name = "Test Map " .. id } end,
     GetBestMapForUnit = function(unit) assert(unit == "player"); return currentMap end,
     GetPlayerMapPosition = function(mapID, unit)
         assert(mapID == currentMap and unit == "player")
@@ -162,12 +174,15 @@ C_Map = {
 playerSamples = 0
 facing = 0
 local namespace = {}
-assert(loadfile(addonPath .. "/Styles.lua"))("CompassForever", namespace)
-assert(loadfile(addonPath .. "/Settings.lua"))("CompassForever", namespace)
-assert(loadfile(addonPath .. "/CompassForever.lua"))("CompassForever", namespace)
-local frame = assert(ForeverCompassFrame)
-local heading = assert(ForeverCompassHeading)
-local marker = assert(ForeverCompassWaypoint)
+assert(loadfile(addonPath .. "/Styles.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/Settings.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/Secrets.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/SecretsUI.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/SecretChecklistBridge.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/SecretsCompass.lua"))("SecretsCompass", namespace)
+local frame = assert(SecretsCompassFrame)
+local heading = assert(SecretsCompassHeading)
+local marker = assert(SecretsCompassWaypoint)
 assert(#frame.lines == 40 and #heading.lines == 24 and #heading.labels == 4, "Preallocated arc and heading regions")
 local firstSegment, lastSegment = frame.lines[1], frame.lines[#frame.lines]
 assert(firstSegment.start[3] < 0 and lastSegment.finish[3] > 0, "Arc spans both sides")
@@ -203,7 +218,7 @@ local function pin(x, y)
 end
 
 ForeverCompassDB = { x = 0, y = 88, theme = "unknown", style = "bogus", opacity = "mistyped" }
-event("ADDON_LOADED", "CompassForever")
+event("ADDON_LOADED", "SecretsCompass")
 event("PLAYER_ENTERING_WORLD")
 advance()
 assert(frame:IsVisible() and heading:IsVisible() and not marker:IsVisible(), "Default state")
@@ -277,8 +292,9 @@ assert(not marker:IsVisible(), "Cleared map pin hidden")
 local samplesWithoutPin = playerSamples
 advance()
 assert(playerSamples == samplesWithoutPin, "No player map samples without a pin")
-assert(SLASH_FOREVERCOMPASS1 == "/fcompass")
-local slash = assert(SlashCmdList.FOREVERCOMPASS)
+assert(SLASH_SECRETSCOMPASS1 == "/secretscompass" and SLASH_SECRETSCOMPASS2 == "/secretcompass"
+    and SLASH_SECRETSCOMPASS3 == "/fcompass", "The renamed addon preserves its old slash aliases")
+local slash = assert(SlashCmdList.SECRETSCOMPASS)
 slash("toggle")
 assert(not frame:IsVisible() and not frame.scripts.OnUpdate and ForeverCompassDB.enabled == false, "Hidden display stops updates and persists")
 slash("toggle")
@@ -297,7 +313,7 @@ assert(ForeverCompassDB.x == 0 and ForeverCompassDB.y == 88, "Reset restores def
 assert(frame:IsVisible(), "Reset keeps visible compass")
 
 local function questMarker(slot)
-    return assert(_G["ForeverCompassQuest" .. slot])
+    return assert(_G["SecretsCompassQuest" .. slot])
 end
 local function questText(slot, expected)
     local quest = questMarker(slot)
@@ -428,7 +444,7 @@ for slot = 1, 8 do
 end
 questText(7, "! 803 yd")
 questText(8, "! 854 yd")
-assert(not ForeverCompassQuest9 or not ForeverCompassQuest9:IsVisible(), "Unwatched super-tracked quest is excluded")
+assert(not SecretsCompassQuest9 or not SecretsCompassQuest9:IsVisible(), "Unwatched super-tracked quest is excluded")
 assert(marker:IsVisible() and marker.labels[1].text == "300 yd", "Manual pin stays independent")
 local function labelBounds(quest)
     local label = quest.labels[1]
@@ -606,7 +622,7 @@ frame.centerX, frame.centerY = 340, 140
 UIParent:SetSize(640, 360)
 UIParent.centerX, UIParent.centerY = 320, 180
 
-local testLabel = assert(ForeverCompassTestLabel)
+local testLabel = assert(SecretsCompassTestLabel)
 assert(not testLabel:IsShown(), "Test mode starts off")
 slash("test")
 assert(testLabel:IsVisible(), "Test mode identified")
@@ -717,10 +733,10 @@ end
 
 assert(ForeverCompassDB.theme == nil and ForeverCompassDB.style == "arc"
     and ForeverCompassDB.opacity == 1, "Old settings are normalized with Classic defaults")
-local minimapButton = assert(CompassForeverMinimapButton)
+local minimapButton = assert(SecretsCompassMinimapButton)
 local icon = assert(minimapButton.icon)
 assert(icon:IsShown() and icon:GetWidth() == 28 and icon:GetHeight() == 28
-    and icon.texture == "Interface\\AddOns\\CompassForever\\Media\\MinimapCompass.tga",
+    and icon.texture == "Interface\\AddOns\\SecretsCompass\\Media\\MinimapCompass.tga",
     "Minimap button displays the bundled compass artwork")
 local iconFile = assert(io.open(addonPath .. "/Media/MinimapCompass.tga", "rb"))
 local pixels = iconFile:read("*a")
@@ -731,7 +747,7 @@ assert(minimapButton.parent == Minimap and minimapButton:IsVisible(), "Minimap b
 click(minimapButton)
 assert(not frame:IsVisible() and minimapButton:IsVisible(), "Left click hides only the HUD")
 click(minimapButton, "RightButton")
-local panel = assert(CompassForeverSettings)
+local panel = assert(SecretsCompassSettings)
 local controls = assert(panel.controls)
 assert(panel:IsVisible() and not frame:IsVisible(), "Right click opens settings while HUD is off")
 assert(panel.dragHandle.scripts.OnDragStart and panel.dragHandle.scripts.OnDragStop, "Title bar is draggable")
@@ -763,7 +779,7 @@ assert(styleCount == #expectedStyles and #namespace.CompassStyles == #expectedSt
 for _, id in ipairs(expectedStyles) do
     click(assert(controls.styles[id]))
     assert(ForeverCompassDB.style == id, "Style selection persists")
-    local hud = shapeSignature(frame.lines, CompassForeverStyleDetails.lines)
+    local hud = shapeSignature(frame.lines, SecretsCompassStyleDetails.lines)
     local preview = shapeSignature(panel.preview.arc, panel.preview.details)
     assert(not hudShapes[hud] and not previewShapes[preview], "Each style has distinct geometry in both renderers: " .. id)
     hudShapes[hud], previewShapes[preview] = true, true
@@ -778,7 +794,7 @@ assert(frame.lines[1].start[4] == frame.lines[20].finish[4], "Framed style has a
 click(controls.styles.tactical)
 assert(frame.lines[20].finish[4] < frame.lines[1].start[4], "Tactical has a center notch")
 click(controls.styles.flight)
-assert(not frame.lines[20]:IsShown() and CompassForeverStyleDetails.lines[1]:IsShown(),
+assert(not frame.lines[20]:IsShown() and SecretsCompassStyleDetails.lines[1]:IsShown(),
     "Flight breaks the center line for its chevron")
 click(controls.styles.arc)
 assert(frame.lines[1].start[4] < frame.lines[20].finish[4], "Arc style restores curvature")
@@ -839,7 +855,7 @@ click(controls.showMinimap)
 assert(minimapButton:IsVisible())
 
 local size = assert(controls.size)
-local lockButton = assert(CompassForeverLockButton)
+local lockButton = assert(SecretsCompassLockButton)
 assert(ForeverCompassDB.scale == 1 and controls.sizeValue:GetText() == "100%"
     and size.minimum == 60 and size.maximum == 150 and size.step == 5,
     "Existing settings default to the original HUD size")
@@ -859,8 +875,8 @@ assert(math.abs(x * 1.5 - 640) < 0.01 and math.abs(y * 1.5 - 448) < 0.01,
 for index = 1, 20 do click(controls.transparencyUp) end
 click(controls.move)
 assert(not panel:IsVisible() and lockButton:IsVisible() and lockButton.parent == UIParent
-    and lockButton:GetText() == "Lock CompassForever" and frame.mouseEnabled,
-    "Move HUD opens the independent Lock CompassForever button")
+    and lockButton:GetText() == "Lock SecretsCompass" and frame.mouseEnabled,
+    "Move HUD opens the independent Lock SecretsCompass button")
 assert(frame.alpha == 1 and ForeverCompassDB.opacity == 0, "The transparent HUD is visible for placement")
 frame.scripts.OnDragStart()
 frame.centerX, frame.centerY = 750 / 1.5, 285 / 1.5
@@ -897,4 +913,313 @@ slash("toggle")
 assert(not lockButton:IsVisible() and not frame.mouseEnabled and not frame:IsVisible(),
     "Hiding the HUD exits move mode")
 
-print("CompassForever mocks passed: tracking, crowded labels, live styles and sizing, and move/lock controls")
+local function fireAddonEvent(name, ...)
+    for _, listener in ipairs(frames) do
+        if listener.events[name] and listener.scripts.OnEvent then
+            listener.scripts.OnEvent(listener, name, ...)
+        end
+    end
+end
+
+local completionFlags, acceptedQuests = {}, {}
+C_QuestLog.IsQuestFlaggedCompleted = function(id) return completionFlags[id] end
+C_QuestLog.IsOnQuest = function(id) return acceptedQuests[id] end
+fireAddonEvent("PLAYER_LOGIN")
+assert(not SecretsCompassSecretChecklistTrackButton, "Standalone mode has no foreign-addon button")
+slash("secrets")
+local secrets = assert(SecretsCompassSecrets)
+local list = namespace.StandaloneSecrets()
+local cozyButton = assert(secrets.controls.routes[list[1].id])
+local alcazButton = assert(secrets.controls.routes[list[2].id])
+assert(secrets:IsVisible() and cozyButton:IsVisible() and alcazButton:IsVisible())
+acceptedQuests[79007] = true
+click(cozyButton)
+assert(secrets.routeTitle:GetText() == "Cozy Sleeping Bag" and secrets.progress:GetText():match("^Step 1"))
+assert(secrets.controls.enableHUD:IsVisible(), "Tracking from a hidden HUD offers Show HUD")
+click(secrets.controls.enableHUD)
+assert(frame:IsVisible())
+facing, currentMap, unavailable = 0, 1, false
+advance()
+assert(marker:IsVisible() and marker.labels[1]:GetText():find("Secret", 1, true)
+   and not marker.labels[1]:GetText():find(" yd", 1, true), "Clue mode shows a marker without yardage")
+assert(secrets.note:GetText() == "" and not secrets.locationText:GetText():find("%d+%.%d+"),
+    "Clue mode hides instructions and precise coordinates")
+assert(marker.lines[1].start[4] == 6, "Clue mode uses a fixed-size marker")
+local hunt = assert(SecretsCompassHuntClue)
+assert(hunt:IsVisible() and hunt:GetText():find("1/7", 1, true), "Compact HUD shows active step")
+click(secrets.controls.close)
+assert(not secrets:IsVisible() and hunt:IsVisible(), "Compact HUD works with both guide windows closed")
+slash("secrets")
+assert(secrets.controls.suggested:IsVisible() and SecretCompassSecretDB.index == 1,
+    "Confirmed starter quest acceptance suggests a step without selecting it")
+click(secrets.controls.suggested)
+assert(SecretCompassSecretDB.index == 2, "Suggested step depends on explicit player selection")
+currentMap = 4
+advance()
+assert(secrets.locationText:GetText():find("Destination:", 1, true)
+    and secrets.travel:GetText() ~= "" and not marker:IsVisible(), "Curated travel hint works without a bearing")
+currentMap = 1
+click(secrets.controls.previous)
+acceptedQuests[79007] = nil
+click(secrets.controls.revealDistance)
+assert(marker.labels[1]:GetText():find(" yd", 1, true)
+    and not secrets.locationText:GetText():find("%d+%.%d+"), "Distance mode reveals only yardage")
+click(secrets.controls.revealCoordinates)
+assert(secrets.locationText:GetText():find("%d+%.%d+") and secrets.note:GetText() == "",
+    "Coordinates mode still withholds full instructions")
+click(secrets.controls.revealFull)
+assert(secrets.note:GetText() ~= "", "Full mode reveals the instruction")
+click(secrets.controls.revealClue)
+assert(secrets.note:GetText() == "" and not marker.labels[1]:GetText():find(" yd", 1, true),
+    "Returning to Clue removes already revealed details")
+slash("test 64")
+assert(not hunt:IsVisible(), "Overflow test suppresses the compact hunt HUD")
+slash("test off")
+assert(hunt:IsVisible(), "Leaving overflow mode restores the compact hunt HUD")
+local starter = SecretCompassSecretDB.route
+assert(starter.steps[1].waypoints[1].mapID == 1413, "Horde begins in the Barrens")
+faction = "Alliance"
+assert(namespace.StandaloneSecrets()[1].steps[1].waypoints[1].mapID == 1436, "Alliance begins in Westfall")
+faction = nil
+assert(#namespace.StandaloneSecrets() == 0, "The standalone route waits for an eligible faction")
+faction = "Horde"
+assert(BINDING_HEADER_SECRETSCOMPASS == "SecretsCompass" and BINDING_NAME_SECRETCOMPASS_NEXT_STEP == "Next Secret Step")
+SecretsCompassNextStep()
+assert(secrets.progress:GetText():match("^Step 2") and SecretCompassSecretDB.index == 2)
+local resumed = namespace.CreateSecretTracker({
+    route = SecretCompassSecretDB.route,
+    index = SecretCompassSecretDB.index,
+    locationIndex = SecretCompassSecretDB.locationIndex,
+}, function() end)
+local _, resumedIndex = resumed:GetRoute()
+assert(resumedIndex == 2, "A new tracker resumes saved step")
+click(secrets.controls.previous)
+assert(SecretCompassSecretDB.index == 1)
+click(secrets.controls.next)
+assert(secrets.controls.stop:GetText() == "Pause")
+click(secrets.controls.stop)
+assert(SecretCompassSecretDB.route == nil and cozyButton:IsVisible()
+    and cozyButton:GetText():find("Resume", 1, true)
+    and cozyButton:GetText():find("Step 2", 1, true), "Pause exposes the saved step in the picker")
+
+completionFlags[96335] = true
+click(alcazButton)
+assert(not cozyButton:IsVisible() and not alcazButton:IsVisible(), "Picker hides during an active route")
+assert(secrets.routeTitle:GetText() == "Alcaz Operative Insignia" and SecretCompassSecretDB.index == 1)
+assert(secrets.stepTitle:GetText():find("alive", 1, true) and secrets.note:GetText() == "",
+    "Opening clue preserves the dungeon quest without exposing the full solution")
+local alcaz = SecretCompassSecretDB.route
+assert(alcaz.steps[1].waypoints[1].mapID == 1445 and alcaz.steps[1].waypoints[1].x == 0.753)
+assert(secrets.controls.suggested:IsVisible(), "Verified prison turn-in suggests Moonbrook")
+click(secrets.controls.suggested)
+assert(SecretCompassSecretDB.index == 2 and alcaz.steps[2].waypoints[1].mapID == 1436)
+click(secrets.controls.revealCoordinates)
+assert(secrets.locationText:GetText():find("43.4, 67.8", 1, true), "Moonbrook location is revealed on request")
+click(secrets.controls.next)
+assert(alcaz.steps[3].waypoints[1].mapID == 1434 and alcaz.steps[3].waypoints[1].y == 0.758)
+assert(alcaz.steps[3].completionQuestID == nil, "Unconfirmed Horde quest flag remains manual")
+click(secrets.controls.revealFull)
+assert(secrets.note:GetText():find("Rix Xizzix", 1, true))
+click(secrets.controls.next)
+assert(#alcaz.steps[4].waypoints == 0 and not marker:IsVisible(), "Final assembly has no compass target")
+slash("next")
+assert(SecretCompassSecretDB.route == nil and alcazButton:IsVisible()
+    and alcazButton:GetText():find("Track", 1, true), "Finished routes are offered as a fresh run")
+click(cozyButton)
+assert(SecretCompassSecretDB.index == 2 and SecretCompassSecretDB.route.title == "Cozy Sleeping Bag",
+    "Starting a second secret preserves the first secret's checkpoint")
+click(secrets.controls.stop)
+faction = "Alliance"
+local allianceAlcaz = namespace.StandaloneSecrets()[2]
+assert(allianceAlcaz.steps[3].waypoints[1].mapID == 1453
+    and allianceAlcaz.steps[3].waypoints[1].y == 0.711
+    and allianceAlcaz.steps[3].completionQuestID == 96377)
+click(alcazButton)
+assert(SecretCompassSecretDB.route == nil, "Stale faction-specific rows cannot start a route")
+faction = "Horde"
+completionFlags[96335] = nil
+
+local foreignPanel = CreateFrame("Frame", nil, UIParent)
+local foreignDetailPane = CreateFrame("Frame", nil, foreignPanel)
+local foreignLink = CreateFrame("Button", nil, foreignDetailPane)
+foreignLink.currentURL = "https://example.com/test-secret"
+local hostClick = function() end
+foreignLink:SetScript("OnClick", hostClick)
+local foreignEntry = {
+    name = "Fixture Secret", guideURL = foreignLink.currentURL,
+    steps = {
+        {
+            label = "Faction heading",
+            factionSubsteps = {
+                alliance = { { label = "Alliance Only" } },
+                horde = {
+                    { label = "Find the note", waypoint = { mapID = 1, x = 0.30, y = 0.40 } },
+                    { label = "Inspect a cache", waypoints = {
+                        { mapID = 4, x = 0.1, y = 0.2, label = "Overseas" },
+                        { mapID = 1, x = 0.25, y = 0.5, label = "Nearby" },
+                        { mapID = 0, x = 10, y = -1 },
+                    } },
+                },
+            },
+        },
+        { label = "Return the note", note = "Talk to the contact." },
+    },
+}
+SecretChecklist = { entries = { foreignEntry }, guidesPanel = foreignPanel, guidesLinkBtn = true }
+fireAddonEvent("ADDON_LOADED", "SecretChecklist")
+assert(not SecretsCompassSecretChecklistTrackButton, "An unsupported host layout is ignored")
+SecretChecklist.guidesLinkBtn = foreignLink
+fireAddonEvent("ADDON_LOADED", "SecretChecklist")
+local trackSecret = assert(SecretsCompassSecretChecklistTrackButton, "Late host load adds the companion button")
+fireAddonEvent("PLAYER_LOGIN")
+assert(SecretsCompassSecretChecklistTrackButton == trackSecret and trackSecret:GetParent() == foreignDetailPane
+    and trackSecret:GetText() == "Track Secret")
+assert(foreignLink:GetScript("OnClick") == hostClick, "Companion keeps the host click action intact")
+waypoint = { uiMapID = 2, position = { x = 300, y = 0 } }
+local savedPin = waypoint
+click(trackSecret)
+assert(secrets.routeTitle:GetText() == "Fixture Secret" and secrets.stepTitle:GetText() ~= "Find the note",
+    "Imported solutions remain hidden in Clue mode")
+click(secrets.controls.revealFull)
+assert(secrets.stepTitle:GetText() == "Find the note")
+assert(#SecretCompassSecretDB.route.steps == 3 and waypoint == savedPin)
+foreignEntry.steps[1].factionSubsteps.horde[1].label = "Upstream changed text"
+assert(SecretCompassSecretDB.route.steps[1].title == "Find the note", "Active route owns a snapshot")
+foreignLink.currentURL = "https://example.com/unknown"
+click(trackSecret)
+assert(secrets.routeTitle:GetText() == "Fixture Secret" and SecretCompassSecretDB.index == 1)
+click(secrets.controls.next)
+advance()
+assert(secrets.controls.location:IsVisible() and not marker:IsVisible(),
+    "Cross-continent step keeps instructions without an invalid compass bearing")
+click(secrets.controls.location)
+advance()
+assert(marker:IsVisible() and SecretCompassSecretDB.locationIndex == 2)
+click(secrets.controls.stop)
+foreignLink.currentURL = foreignEntry.guideURL
+click(trackSecret)
+advance()
+assert(marker:IsVisible() and SecretCompassSecretDB.index == 2 and SecretCompassSecretDB.locationIndex == 2,
+    "Reopening a SecretChecklist guide resumes its selected location")
+click(secrets.controls.next)
+advance()
+assert(secrets.stepTitle:GetText() == "Return the note" and not marker:IsVisible())
+assert(secrets.controls.next:GetText() == "Finish")
+slash("next")
+advance()
+assert(not SecretCompassSecretDB.route and waypoint == savedPin and marker:IsVisible()
+    and not marker.labels[1]:GetText():find("Secret", 1, true), "Finishing restores normal waypoint rendering")
+
+local cozy = namespace.StandaloneSecrets()[1]
+local importedCozy = {
+    name = "Cozy Sleeping Bag", questID = 79976, guideURL = cozy.sourceURL,
+    steps = {
+        {
+            label = "Start",
+            note = "Visit both locations.",
+            factionSubsteps = { horde = {
+                {label = "First", questIDs = {79008, 79007}, waypoint = cozy.steps[1].waypoints[1]},
+                {label = "Second", questIDs = {79008, 79007}, waypoint = cozy.steps[2].waypoints[1]},
+            }},
+        },
+        {label = "Camp", questID = 79192, waypoint = cozy.steps[3].waypoints[1]},
+        {label = "Rekindle", questID = 80001},
+        {label = "Mound", questID = 79980, waypoint = cozy.steps[4].waypoints[1]},
+    },
+}
+SecretChecklist.entries = {importedCozy}
+foreignLink.currentURL = importedCozy.guideURL
+completionFlags[79007], completionFlags[79192] = true, true
+click(trackSecret)
+assert(SecretCompassSecretDB.route.steps[5].optional and secrets.controls.suggested:IsVisible())
+click(secrets.controls.suggested)
+assert(SecretCompassSecretDB.index == 6, "Required suggestions pass over the verified optional Rekindle step")
+click(secrets.controls.previous)
+assert(SecretCompassSecretDB.index == 5, "Optional steps remain manually selectable")
+click(secrets.controls.stop)
+completionFlags[79007], completionFlags[79192] = nil, nil
+
+local state = {}
+local huntTracker = namespace.CreateSecretTracker(state, function() end)
+local routeOne = {
+    id = "fixture:hunt", title = "Hunt",
+    steps = {
+        { title = "First secret", clue = "Look for a lead.", travelHint = "Use the north entrance.",
+            completionQuestID = 401, completionOnAccept = true },
+        { title = "Second secret", completionQuestID = 402 },
+        { title = "Unverified puzzle" },
+        { title = "Last secret", completionQuestID = 404 },
+    },
+}
+local routeTwo = { id = "fixture:different", title = "Another", steps = {{title = "A clue"}} }
+assert(huntTracker:Track(routeOne) and huntTracker:GetReveal() == "clue")
+assert(huntTracker:SetReveal("distance") and huntTracker:GetReveal() == "distance")
+assert(huntTracker:SetReveal("coordinates") and huntTracker:GetReveal() == "coordinates")
+assert(huntTracker:SetReveal("full") and huntTracker:GetReveal() == "full")
+assert(huntTracker:SetReveal("invalid") == false)
+assert(huntTracker:Track(routeTwo) and huntTracker:GetReveal() == "clue")
+assert(huntTracker:Stop() and huntTracker:Track(routeOne) and huntTracker:GetReveal() == "full")
+local loadedTracker = namespace.CreateSecretTracker(state, function() end)
+assert(loadedTracker:GetReveal() == "full", "Reveal mode survives reload")
+local firstStep = loadedTracker:GetCurrentStep()
+assert(firstStep.clue == "Look for a lead." and firstStep.travelHint == "Use the north entrance.")
+completionFlags[401], completionFlags[402], completionFlags[404] = secret, true, true
+assert(loadedTracker:GetSuggestedStep() == nil, "Protected flags cannot substantiate progress")
+completionFlags[401], acceptedQuests[401] = false, true
+assert(loadedTracker:GetSuggestedStep() == 3, "Only the verified prefix counts")
+local _, beforeSuggestion = loadedTracker:GetRoute()
+assert(beforeSuggestion == 1, "Checking progress never advances")
+assert(loadedTracker:Jump(3) and not loadedTracker:Jump(8))
+assert(loadedTracker:Step(-1), "The suggested step can be manually overridden")
+
+local saved = {}
+local tracker = namespace.CreateSecretTracker(saved, function() end)
+local firstLocation = {mapID = 1436, x = 0.30, y = 0.40}
+local secondLocation = {mapID = 1436, x = 0.50, y = 0.60}
+local beginStep = {title = "Begin"}
+local pickStep = {title = "Investigate", completionQuestID = 654, waypoints = {firstLocation, secondLocation}}
+local endStep = {title = "Complete"}
+local route = {id = "fixture:checkpoints", title = "Route A", sourceURL = "https://example.com/route",
+    steps = {beginStep, pickStep, endStep}}
+local another = {id = "fixture:checkpoints-other", title = "Route B", steps = {beginStep, endStep}}
+assert(tracker:Track(route) and tracker:Step(1) and tracker:CycleLocation())
+assert(not tracker:Track({id = "bad"}), "An invalid switch leaves the active route intact")
+local _, keptIndex, keptLocation = tracker:GetRoute()
+assert(keptIndex == 2 and keptLocation == 2)
+assert(tracker:Track(another) and tracker:Step(1) and tracker:Stop())
+local restored = namespace.CreateSecretTracker(saved, function() end)
+local index, location = restored:GetResumeStep(route)
+assert(index == 2 and location == 2, "Switching saves a separate checkpoint across reload")
+local otherIndex = restored:GetResumeStep(another)
+assert(otherIndex == 2, "Pausing another route saves independently")
+assert(restored:Track(route) and restored:GetCurrentStep().title == pickStep.title)
+local _, selected = restored:GetCurrentStep()
+assert(selected.x == secondLocation.x, "Repeat selection restores the waypoint")
+local moved = {id = route.id, title = route.title, sourceURL = route.sourceURL,
+    steps = {beginStep, endStep,
+        {title = pickStep.title, completionQuestID = 654, waypoints = {secondLocation, firstLocation}}}}
+assert(restored:Track(moved), "A guide can refresh while active")
+local _, newIndex, newLocation = restored:GetRoute()
+assert(newIndex == 3 and newLocation == 1, "Active guide reorders preserve the uniquely matching step and point")
+assert(restored:Stop() and restored:Track(route))
+local _, originalIndex, originalLocation = restored:GetRoute()
+assert(originalIndex == 2 and originalLocation == 2, "Paused guide reorders preserve the same step and location")
+assert(restored:Stop())
+local changed = {id = route.id, title = route.title, sourceURL = "https://example.com/updated", steps = route.steps}
+assert(restored:GetResumeStep(changed) == nil, "A changed guide source cannot claim an old checkpoint")
+local duplicate = {id = route.id, title = route.title, sourceURL = route.sourceURL, steps = {pickStep, pickStep}}
+assert(restored:GetResumeStep(duplicate) == nil, "Duplicate step titles and quest identities are ambiguous")
+assert(restored:Track(moved) and restored:Finish() and restored:GetResumeStep(moved) == nil)
+assert(restored:Track(moved))
+local _, replayIndex = restored:GetRoute()
+assert(replayIndex == 1 and restored:GetResumeStep(another) == 2, "Finish resets only the completed route")
+
+local invalidState = {checkpoints = {
+    [route.id] = {sourceURL = route.sourceURL, stepTitle = false},
+    [another.id] = {sourceURL = false, stepTitle = "Complete"},
+}}
+local sanitized = namespace.CreateSecretTracker(invalidState, function() end)
+assert(sanitized:GetResumeStep(route) == nil and sanitized:GetResumeStep(another) == nil
+    and next(invalidState.checkpoints) == nil, "Malformed saved checkpoints are filtered")
+
+print("SecretsCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, spoiler levels, verified progress, and the SecretChecklist companion")
