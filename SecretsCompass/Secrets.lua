@@ -873,6 +873,76 @@ local function excitableSlimeRoute()
     })
 end
 
+local function silverOfTheWavesRoute()
+    return ns.NormalizeSecretRoute({
+        id = "silver-of-the-waves",
+        title = "Silver of the Waves",
+        sourceURL = "https://www.wowhead.com/forever/quest=86614/silver-of-the-waves",
+        steps = {
+            {
+                title = "Find the Discarded Fishing Toolbox",
+                note = "Alliance, level 13 or higher. Dive to the lakebed in Loch Modan and look near the wrecked boats. "
+                    .. "Open the toolbox and accept Silver of the Waves to get the Monogrammed Silver Hair Clip. "
+                    .. "Use Next Location to check the other reported toolbox sites.",
+                clue = "Look for a lost keepsake near the wrecks at the bottom of the loch.",
+                waypoints = {
+                    { mapID = 1432, x = 0.481, y = 0.396, label = "Toolbox search area" },
+                    { mapID = 1432, x = 0.456, y = 0.434, label = "Alternate toolbox search area" },
+                    { mapID = 1432, x = 0.489, y = 0.543, label = "Southern toolbox search area" },
+                },
+            },
+            routeStep("Return the hair clip",
+                "Bring the clip to Khara Deepwater in the fishing hut on the western shore of the loch, near Thelsamar.",
+                { mapID = 1432, x = 0.395, y = 0.393, label = "Khara Deepwater" },
+                "Who on the shore has the initials K.D.?"),
+        },
+    })
+end
+
+local function applejackStillRoute()
+    return ns.NormalizeSecretRoute({
+        id = "applejack-still",
+        title = "Applejack Still",
+        sourceURL = "https://wowhandbook.com/news/applejack-still-elwynn-forest/",
+        steps = {
+            routeStep("Get four Shiny Red Apples",
+                "Alliance. Buy Shiny Red Apples from Tharynn Bouden in Goldshire if you need them. "
+                    .. "Carry four apples to the still.",
+                { mapID = 1429, x = 0.418, y = 0.672, label = "Tharynn Bouden" },
+                "Stock up on fruit before looking for the still."),
+            routeStep("Brew Thunder Applejack",
+                "Interact with the Applejack Still on the hillside by Thunder Falls above Mirror Lake. "
+                    .. "Hand in the four apples and take the Thunder Applejack.",
+                { mapID = 1429, x = 0.246, y = 0.580, label = "Applejack Still" },
+                "Look for a still on the slopes above the water."),
+            routeStep("Bring the drink to Sergeant De Vries",
+                "Take the Thunder Applejack inside Westbrook Garrison. At level 7 or higher, "
+                    .. "accept and turn in An Apple Treat with Sergeant De Vries.",
+                { mapID = 1429, x = 0.241, y = 0.732, label = "Sergeant De Vries" },
+                "A soldier at the garrison would appreciate a bottle."),
+        },
+    })
+end
+
+local function whisperingHorrorResidueRoute()
+    return ns.NormalizeSecretRoute({
+        id = "whispering-horror-residue",
+        title = "Whispering Horror Residue",
+        sourceURL = "https://www.wowhead.com/forever/quest=95328/whispering-horror-residue",
+        steps = {
+            routeStep("Collect Whispering Horror Residue",
+                "Horde, level 7 or higher. Enter the cellar under a ruined building in Shadowvale, Tirisfal Glades. "
+                    .. "Defeat the level 11–13 elite Whispering Horror, loot its residue, and use it to start the quest.",
+                { mapID = 1420, x = 0.129, y = 0.657, label = "Shadowvale cellar entrance" },
+                "The whispers grow louder beneath a ruin in Shadowvale."),
+            routeStep("Deliver the residue",
+                "Bring the residue to Father Lankester on the outer balcony in Undercity's War Quarter.",
+                { mapID = 1458, x = 0.491, y = 0.146, label = "Father Lankester" },
+                "A priest in the Undercity may want to study the sample."),
+        },
+    })
+end
+
 function ns.StandaloneSecrets()
     -- Route facts cross-checked against the Forever guides from Method and Wowhead.
     local source = "https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards"
@@ -939,6 +1009,10 @@ function ns.StandaloneSecrets()
         nightWatchmansTorchRoute(), lynTheIgnoredRoute(), dawnWakerRoute(faction), manualScavengerHuntRoute() }
     if faction == "horde" then
         routes[#routes + 1] = excitableSlimeRoute()
+        routes[#routes + 1] = whisperingHorrorResidueRoute()
+    else
+        routes[#routes + 1] = silverOfTheWavesRoute()
+        routes[#routes + 1] = applejackStillRoute()
     end
     return routes
 end

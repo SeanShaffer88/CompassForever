@@ -967,6 +967,9 @@ do
             {2521, 417, 234}, {2521, 476, 719}, {1447, 660, 541}, {2482, 727, 372}, {2521, 583, 245},
         },
         ["excitable-slime"] = { {1458, 555, 641}, {1458, 523, 584}, {1458, 509, 534} },
+        ["silver-of-the-waves"] = { {1432, 481, 396}, {1432, 456, 434}, {1432, 489, 543}, {1432, 395, 393} },
+        ["applejack-still"] = { {1429, 418, 672}, {1429, 246, 580}, {1429, 241, 732} },
+        ["whispering-horror-residue"] = { {1420, 129, 657}, {1458, 491, 146} },
         ["manual-scavenger-hunt"] = {
             {1417, 226.9, 241.7}, {1424, 876.1, 479.1}, {1458, 228.6, 361.9},
             {2548, 265.6, 455.8}, {2548, 267.2, 477.4}, {1419, 451.9, 164.7},
@@ -975,9 +978,26 @@ do
     }
     for _, side in ipairs({ "Horde", "Alliance" }) do
         faction = side
+        slash("secrets")
+        slash("secrets")
         local choices = namespace.StandaloneSecrets()
-        assert(#choices == (side == "Horde" and 9 or 8), "Only Horde receives Excitable Slime")
-        assert(side ~= "Horde" or choices[9].id == "excitable-slime", "Slime is appended to the Horde catalog")
+        local isAlliance = side == "Alliance"
+        assert(#choices == 10 and secrets.progress:GetText() == "0 of 10 Built-In Routes Finished",
+            "Each faction has ten built-in routes")
+        if isAlliance then
+            assert(choices[9].id == "silver-of-the-waves" and choices[10].id == "applejack-still"
+                and not secrets.controls.routes["excitable-slime"]:IsVisible()
+                and not secrets.controls.routes["whispering-horror-residue"]:IsVisible(),
+                "Alliance receives Silver of the Waves and Applejack Still")
+        else
+            assert(choices[9].id == "excitable-slime" and choices[10].id == "whispering-horror-residue",
+                "Horde receives Excitable Slime and Whispering Horror Residue")
+        end
+        local lastRow = secrets.controls.routes[choices[10].id]
+        local _, _, rowY = lastRow:GetPoint()
+        assert(secrets:GetHeight() == 531
+            and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
+            "The tenth route row fits above navigation")
         for i = 3, #choices do
             local choice = choices[i]
             assert(choice.sourceURL and secrets.controls.routes[choice.id]:IsVisible(),
@@ -1016,7 +1036,6 @@ do
         assert(#manual.steps[11].waypoints == 0 and manual.steps[11].title == "Unresolved Clues",
             "Unsolved fragments have no invented waypoint")
         local dawn = choices[7]
-        local isAlliance = side == "Alliance"
         local total = isAlliance and 23 or 22
         assert(dawn.ongoing and #dawn.steps == total
             and dawn.steps[6].waypoints[1].mapID == (isAlliance and 1439 or 1440),
@@ -1033,24 +1052,39 @@ do
         assert(resume == 6 and legacy:Jump(total) and not legacy:Finish() and legacy:Stop()
             and legacy:GetResumeStep(dawn) == total, "Explicit pauses take precedence over legacy chapter progress")
     end
-    faction = "Horde"
     local slime = secrets.controls.routes["excitable-slime"]
-    assert(secrets.progress:GetText() == "0 of 9 Built-In Routes Finished" and slime:IsVisible())
-    local _, _, slimeRowY = slime:GetPoint()
-    assert(26 - slimeRowY + slime:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
-        "The ninth Horde row fits above navigation")
-    local hordeHeight = secrets:GetHeight()
-
-    faction = "Alliance"
-    slash("secrets")
-    slash("secrets")
-    assert(not slime:IsVisible() and secrets.progress:GetText() == "0 of 8 Built-In Routes Finished"
-        and secrets:GetHeight() + 30 == hordeHeight, "Alliance keeps the eight-route journal height")
     click(slime)
     assert(not SecretCompassSecretDB.route, "A stale Horde route row cannot start on Alliance")
+
+    local silver = secrets.controls.routes["silver-of-the-waves"]
+    click(silver)
+    assert(secrets.routeTitle:GetText() == "Silver of the Waves" and not secrets.controls.mapCommand:IsVisible(),
+        "Alliance can open the toolbox route with clues only")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1432 48.10 39.60",
+        "The first toolbox search site can be copied")
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1432 45.60 43.40",
+        "Next Location cycles to another toolbox search site")
+    click(secrets.controls.location)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1432 48.90 54.30",
+        "Next Location reaches the southern toolbox site")
+    click(secrets.controls.next)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1432 39.50 39.30",
+        "Next advances from toolbox search sites to Khara Deepwater")
+    click(secrets.controls.stop)
+
     faction = "Horde"
     slash("secrets")
     slash("secrets")
+    local applejack = secrets.controls.routes["applejack-still"]
+    assert(not applejack:IsVisible() and not silver:IsVisible(), "Alliance rows are hidden on Horde")
+    click(applejack)
+    assert(not SecretCompassSecretDB.route, "A stale Alliance route row cannot start on Horde")
 
     click(slime)
     assert(secrets.routeTitle:GetText() == "Excitable Slime" and not secrets.controls.mapCommand:IsVisible(),
@@ -1067,9 +1101,6 @@ do
     click(secrets.controls.stop)
 
     local manual = secrets.controls.routes["manual-scavenger-hunt"]
-    local _, _, rowY = manual:GetPoint()
-    assert(26 - rowY + manual:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
-        "The last standalone route row fits above navigation")
     click(manual)
     assert(secrets.routeTitle:GetText() == "Manual Scavenger Hunt" and not secrets.controls.mapCommand:IsVisible())
     slash("step 3")
