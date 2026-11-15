@@ -309,81 +309,203 @@ local function refreshPanel(panel, api)
     end
 end
 
+local function addMinimapTooltip(tooltip)
+    tooltip:SetText("SecretsCompass")
+    tooltip:AddLine("Left-click to open Secrets", 1, 1, 1)
+    tooltip:AddLine("Right-click to open settings", 1, 1, 1)
+end
+
+local function createMinimapButton(position, onClick, finite)
+    local button = CreateFrame("Button", "SecretsCompassMinimapButton", Minimap)
+    button:SetSize(31, 31)
+    button:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    button:RegisterForDrag("LeftButton")
+    local icon = button:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(28, 28)
+    icon:SetPoint("CENTER")
+    icon:SetTexture(iconPath)
+    button.icon = icon
+
+    local lastX, lastY
+    local function place()
+        local angle = math.rad(position.minimapPos)
+        local x, y = math.cos(angle), math.sin(angle)
+        if GetMinimapShape and GetMinimapShape() == "SQUARE" then
+            local edge = math.max(math.abs(x), math.abs(y))
+            x, y = x / edge, y / edge
+        end
+        button:ClearAllPoints()
+        button:SetPoint("CENTER", Minimap, "CENTER", x * Minimap:GetWidth() / 2, y * Minimap:GetHeight() / 2)
+        local _, _, _, actualX, actualY = button:GetPoint(1)
+        lastX, lastY = actualX, actualY
+    end
+
+    local function ownsAnchor()
+        if button:GetParent() ~= Minimap or button:GetNumPoints() ~= 1 then
+            return false
+        end
+        local anchor, relative, relativeAnchor, x, y = button:GetPoint(1)
+        return anchor == "CENTER" and relative == Minimap and relativeAnchor == "CENTER" and x == lastX and y == lastY
+    end
+
+    local dragging, suppressClick
+    local function hideTooltip()
+        if GameTooltip and GameTooltip:IsOwned(button) then
+            GameTooltip:Hide()
+        end
+    end
+    local function stopDrag()
+        if dragging then
+            dragging = false
+            button:SetScript("OnUpdate", nil)
+            if C_Timer and type(C_Timer.After) == "function" then
+                C_Timer.After(0, function()
+                    if not dragging then
+                        suppressClick = false
+                    end
+                end)
+            end
+        end
+    end
+    local function updateDrag()
+        if not ownsAnchor() then
+            stopDrag()
+            return
+        end
+        local centerX, centerY = Minimap:GetCenter()
+        local x, y = GetCursorPosition()
+        local scale = Minimap:GetEffectiveScale()
+        if finite(x) and finite(y) and finite(centerX) and finite(centerY) and finite(scale) and scale > 0 then
+            x, y = x / scale - centerX, y / scale - centerY
+            if x ~= 0 or y ~= 0 then
+                position.minimapPos = math.deg(math.atan2(y, x)) % 360
+                place()
+            end
+        end
+    end
+
+    place()
+    button:SetShown(not position.hide)
+    button:SetScript("OnMouseDown", function() suppressClick = false end)
+    button:SetScript("OnClick", function(self, mouseButton)
+        if not dragging and not suppressClick then
+            onClick(self, mouseButton)
+        end
+    end)
+    button:SetScript("OnDragStart", function()
+        if ownsAnchor() then
+            dragging, suppressClick = true, true
+            hideTooltip()
+            button:SetScript("OnUpdate", updateDrag)
+        end
+    end)
+    button:SetScript("OnDragStop", function()
+        if dragging then
+            updateDrag()
+            stopDrag()
+        end
+    end)
+    button:SetScript("OnEnter", function(self)
+        if GameTooltip and not dragging then
+            GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+            addMinimapTooltip(GameTooltip)
+            if ownsAnchor() then
+                GameTooltip:AddLine("Drag to move around the minimap", 1, 1, 1)
+            end
+            GameTooltip:Show()
+        end
+    end)
+    button:SetScript("OnLeave", hideTooltip)
+    button:SetScript("OnHide", function()
+        stopDrag()
+        hideTooltip()
+    end)
+    return button
+end
+
 function namespace.CreateSettingsUI(api)
     local ui = {}
-    local panel, minimapButton
+    local panel, setMinimapVisible, lastMinimapVisibility
 
     function ui:Refresh()
-        if minimapButton then
-            local options = api.get()
-            minimapButton:SetShown(options.showMinimap)
-            minimapButton.icon:SetAlpha(options.enabled and 1 or 0.65)
+        local options = api.get()
+        if setMinimapVisible and options.showMinimap ~= lastMinimapVisibility then
+            lastMinimapVisibility = options.showMinimap
+            options.minimap.hide = not options.showMinimap
+            setMinimapVisible(options.showMinimap)
         end
         if panel then
             refreshPanel(panel, api)
         end
     end
 
-    function ui:Toggle()
+    function ui:Open()
         if not panel then
             panel = makePanel(api)
         end
-        if panel:IsShown() then
+        self:Refresh()
+        panel:Show()
+    end
+
+    function ui:Toggle()
+        if panel and panel:IsShown() then
             panel:Hide()
         else
-            self:Refresh()
-            panel:Show()
+            self:Open()
         end
     end
 
-    local function attachMinimapButton()
-        if minimapButton or not Minimap then
+    local function onMinimapClick(_, mouseButton)
+        if mouseButton == "RightButton" then
+            if not IsControlKeyDown or not IsControlKeyDown() then
+                ui:Open()
+            end
+        elseif mouseButton == "LeftButton" and api.openSecrets then
+            if panel then
+                panel:Hide()
+            end
+            api.openSecrets()
+        end
+    end
+
+    function ui:AttachMinimap()
+        if setMinimapVisible or not Minimap then
             return
         end
-        minimapButton = CreateFrame("Button", "SecretsCompassMinimapButton", Minimap)
-        minimapButton:SetSize(31, 31)
-        minimapButton:SetPoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", 6, 6)
-        minimapButton:SetFrameLevel(Minimap:GetFrameLevel() + 5)
-        minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        local icon = minimapButton:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(28, 28)
-        icon:SetPoint("CENTER")
-        icon:SetTexture(iconPath)
-        minimapButton.icon = icon
-        minimapButton:SetScript("OnClick", function(_, mouseButton)
-            if mouseButton == "RightButton" then
-                ui:Toggle()
-            else
-                api.set("enabled", not api.get().enabled)
-            end
-        end)
-        minimapButton:SetScript("OnEnter", function(self)
-            if GameTooltip then
-                GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-                GameTooltip:SetText("SecretsCompass")
-                GameTooltip:AddLine("Left-click to enable or disable the secret HUD", 1, 1, 1)
-                GameTooltip:AddLine("Right-click to open settings", 1, 1, 1)
-                GameTooltip:Show()
-            end
-        end)
-        local function hideTooltip()
-            if GameTooltip and GameTooltip:IsOwned(minimapButton) then
-                GameTooltip:Hide()
+        local options = api.get()
+        local position = options.minimap
+        lastMinimapVisibility = options.showMinimap
+        position.hide = not options.showMinimap
+        local broker = LibStub and LibStub("LibDataBroker-1.1", true)
+        local dbIcon = LibStub and LibStub("LibDBIcon-1.0", true)
+        if broker and type(broker.NewDataObject) == "function" and dbIcon
+            and type(dbIcon.Register) == "function" and type(dbIcon.Show) == "function" and type(dbIcon.Hide) == "function" then
+            local launcher = broker:NewDataObject(addonName, {
+                type = "launcher", label = "SecretsCompass", icon = iconPath,
+                OnClick = onMinimapClick, OnTooltipShow = addMinimapTooltip,
+            })
+            if launcher then
+                dbIcon:Register(addonName, launcher, position)
+                setMinimapVisible = function(shown)
+                    if shown then
+                        dbIcon:Show(addonName)
+                    else
+                        dbIcon:Hide(addonName)
+                    end
+                end
+                return
             end
         end
-        minimapButton:SetScript("OnLeave", hideTooltip)
-        minimapButton:SetScript("OnHide", hideTooltip)
-        ui:Refresh()
-    end
 
-    attachMinimapButton()
-    if not minimapButton then
-        local login = CreateFrame("Frame")
-        login:RegisterEvent("PLAYER_LOGIN")
-        login:SetScript("OnEvent", function(self)
-            self:UnregisterEvent("PLAYER_LOGIN")
-            attachMinimapButton()
-        end)
+        local button = createMinimapButton(position, onMinimapClick, api.finite)
+        setMinimapVisible = function(shown)
+            if shown then
+                button:Show()
+            else
+                button:Hide()
+            end
+        end
     end
     return ui
 end

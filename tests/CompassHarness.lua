@@ -38,6 +38,7 @@ function methods:GetHeight() return self.height or 0 end
 function methods:SetPoint(...) self.point = { ... } end
 function methods:ClearAllPoints() self.point = nil end
 function methods:GetPoint() return unpack(self.point or {}) end
+function methods:GetNumPoints() return self.point and 1 or 0 end
 function methods:GetCenter()
     if self.centerX or self.centerY then
         return self.centerX or 640, self.centerY or 360
@@ -130,6 +131,10 @@ UIParent = region()
 UIParent:SetSize(1280, 720)
 Minimap = region(UIParent)
 Minimap:SetSize(140, 140)
+local cursorX, cursorY, minimapShape, controlDown = 640, 360, "ROUND", false
+function GetCursorPosition() return cursorX, cursorY end
+function GetMinimapShape() return minimapShape end
+function IsControlKeyDown() return controlDown end
 UISpecialFrames = {}
 function CreateFrame(_, name, parent, template)
     local frame = region(parent)
@@ -367,6 +372,8 @@ end
 
 assert(ForeverCompassDB.theme == nil and ForeverCompassDB.style == "arc"
     and ForeverCompassDB.opacity == 1, "Old settings are normalized with Classic defaults")
+assert(not SecretsCompassMinimapButton, "Wait until login to discover optional minimap libraries")
+event("PLAYER_LOGIN")
 local minimapButton = assert(SecretsCompassMinimapButton)
 local icon = assert(minimapButton.icon)
 assert(icon:IsShown() and icon:GetWidth() == 28 and icon:GetHeight() == 28
@@ -378,8 +385,59 @@ iconFile:close()
 assert(#pixels == 4114 and pixels:byte(3) == 2 and pixels:byte(13) == 32
     and pixels:byte(15) == 32 and pixels:byte(17) == 32, "Bundled TGA is 32 by 32 RGBA")
 assert(minimapButton.parent == Minimap and minimapButton:IsVisible(), "Minimap button is independent of the HUD")
+local savedHUD = ForeverCompassDB.enabled
 click(minimapButton)
-assert(not frame:IsVisible() and minimapButton:IsVisible(), "Left click hides only the HUD")
+local launcherJournal = assert(SecretsCompassSecrets)
+assert(launcherJournal:IsVisible() and not frame:IsVisible() and ForeverCompassDB.enabled == savedHUD,
+    "Left click opens Secrets independently of the HUD preference")
+click(launcherJournal.controls.close)
+controlDown = true
+click(minimapButton, "RightButton")
+controlDown = false
+assert(not SecretsCompassSettings, "Control-right is reserved for button bags")
+
+Minimap:SetScale(0.5)
+minimapShape = "SQUARE"
+cursorX, cursorY = (640 + 50) * 0.5, (360 + 50) * 0.5
+minimapButton.scripts.OnDragStart(minimapButton)
+assert(minimapButton.scripts.OnUpdate, "Dragging starts cursor tracking")
+minimapButton.scripts.OnUpdate(minimapButton)
+local point, relative, relativePoint, offsetX, offsetY = minimapButton:GetPoint()
+assert(point == "CENTER" and relative == Minimap and relativePoint == "CENTER"
+    and math.abs(offsetX - Minimap:GetWidth() / 2) < 0.001
+    and math.abs(offsetY - Minimap:GetHeight() / 2) < 0.001,
+    "Scaled square minimap places the button on its edge")
+local originalAfter, afterDrag = C_Timer.After
+C_Timer.After = function(_, callback) afterDrag = callback end
+minimapButton.scripts.OnDragStop(minimapButton)
+C_Timer.After = originalAfter
+assert(math.abs(ForeverCompassDB.minimap.minimapPos - 45) < 0.001 and not minimapButton.scripts.OnUpdate,
+    "The saved angle persists and polling ends")
+click(minimapButton)
+assert(not launcherJournal:IsVisible(), "Releasing the drag does not open Secrets")
+assert(afterDrag, "Drag release only suppresses clicks in the current update")
+afterDrag()
+click(minimapButton)
+assert(launcherJournal:IsVisible(), "A later bag-generated click opens Secrets without mouse down")
+click(launcherJournal.controls.close)
+
+minimapButton.scripts.OnDragStart(minimapButton)
+minimapButton.scripts.OnHide(minimapButton)
+assert(not minimapButton.scripts.OnUpdate, "Hiding ends an active drag")
+local nativeAnchor = minimapButton.point
+local bagAnchor = region(Minimap)
+minimapButton:SetPoint("LEFT", bagAnchor, "RIGHT", 5, 0)
+minimapButton.scripts.OnDragStart(minimapButton)
+assert(not minimapButton.scripts.OnUpdate and minimapButton.point[2] == bagAnchor,
+    "A bag can own the button's anchors without reparenting it")
+minimapButton.point, minimapButton.parent = nativeAnchor, bagAnchor
+minimapButton.scripts.OnDragStart(minimapButton)
+assert(not minimapButton.scripts.OnUpdate and minimapButton.parent == bagAnchor,
+    "A bag that owns the parent manages placement")
+minimapButton.parent = Minimap
+Minimap:SetScale(1)
+minimapShape = "ROUND"
+minimapButton.scripts.OnMouseDown(minimapButton)
 click(minimapButton, "RightButton")
 local panel = assert(SecretsCompassSettings)
 local controls = assert(panel.controls)
@@ -446,7 +504,13 @@ for index = 1, 20 do click(controls.transparencyDown) end
 assert(ForeverCompassDB.opacity == 1 and frame.alpha == 1 and panel.preview.artwork.alpha == 1,
     "Transparency is bounded at 0%")
 
-click(minimapButton)
+controls.enabled:SetChecked(false)
+click(controls.enabled)
+assert(not ForeverCompassDB.enabled and not frame:IsVisible() and panel:IsVisible()
+    and minimapButton:IsVisible() and (icon.alpha == nil or icon.alpha == 1),
+    "Disabling the HUD leaves the independent minimap launcher fully visible")
+controls.enabled:SetChecked(true)
+click(controls.enabled)
 assert(ForeverCompassDB.enabled and not frame:IsVisible() and panel:IsVisible(),
     "Enabling the HUD without a secret leaves settings available")
 assert(not controls.showQuests and not controls.showWaypoint and not controls.test
@@ -653,9 +717,9 @@ do
         end
         local lastRow = secrets.controls.routes[isAlliance and "silver-of-the-waves" or "whispering-horror-residue"]
         local _, _, rowY = lastRow:GetPoint()
-        assert(secrets:GetHeight() == (isAlliance and 1045 or 1015)
+        assert(secrets:GetHeight() == (isAlliance and 1015 or 985)
             and not secrets.controls.routePageNext:IsVisible()
-            and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
+            and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 15,
             "The last route row fits above navigation")
         for i = 3, #choices do
             local choice = choices[i]
@@ -906,6 +970,16 @@ end
 do
     local controls = secrets.controls
     local previousPage, nextPage, range = controls.routePagePrevious, controls.routePageNext, controls.routePageRange
+    local function assertNavigationPosition()
+        local anchor, navigationX, navigationY = controls.navigation:GetPoint()
+        local _, statusX, statusY = secrets.navigationStatus:GetPoint()
+        local _, _, titleY = secrets.routeTitle:GetPoint()
+        assert(controls.navigation:IsVisible() and anchor == "TOPLEFT"
+            and navigationY - controls.navigation:GetHeight() > titleY
+            and statusX + secrets.navigationStatus:GetWidth() < navigationX
+            and statusY - secrets.navigationStatus:GetHeight() >= titleY,
+            "Navigation and its status sit above the route title without overlap")
+    end
     local function displayOrder(isAlliance)
         local order = {
             { "Pets", {
@@ -959,7 +1033,7 @@ do
                 if not headings[route.heading] then
                     local heading = assert(controls.routeHeadings[route.heading])
                     local _, _, headingY = heading:GetPoint()
-                    assert(heading:GetText() == route.heading:upper() and headingY - heading:GetHeight() >= rowY
+                    assert(heading:GetText() == "-  " .. route.heading:upper() and headingY - heading:GetHeight() >= rowY
                         and (not previousBottom or previousBottom >= headingY), "Category heading sits above its first route")
                     headings[route.heading] = true
                 end
@@ -982,12 +1056,12 @@ do
     end
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(1, 11, 697)
+    assertPage(1, 12, 697)
     assert(secrets.progress:GetText() == "1 of 21 Built-In Routes Finished",
         "Completion includes finished routes off the current page")
     SecretCompassSecretDB.finishedRoutes["whispering-horror-residue"] = nil
     click(nextPage)
-    assertPage(12, 21, 697)
+    assertPage(13, 21, 697)
     click(lateRoute)
     assert(secrets.routeTitle:GetText() == "Whispering Horror Residue" and not range:IsVisible()
         and not previousPage:IsVisible() and not nextPage:IsVisible() and not lateRoute:IsVisible(),
@@ -996,9 +1070,9 @@ do
         assert(not heading:IsVisible(), "Tracking hides category headings")
     end
     click(controls.stop)
-    assertPage(12, 21, 697)
+    assertPage(13, 21, 697)
     click(previousPage)
-    assertPage(1, 11, 697)
+    assertPage(1, 12, 697)
 
     click(controls.routes["condor-hatchling"])
     click(controls.revealCoordinates)
@@ -1007,7 +1081,7 @@ do
     assert(controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90",
         "Next Location reaches an alternate Lord Condar search area")
     click(controls.stop)
-    assertPage(1, 11, 697)
+    assertPage(1, 12, 697)
 
     click(controls.routes["bitter-baitling"])
     click(controls.revealCoordinates)
@@ -1022,39 +1096,40 @@ do
     assert(controls.mapCommandInput:GetText() == "/mappin 1434 26.70 76.30",
         "The final step leads to Jang for the prize exchange")
     click(controls.stop)
-    assertPage(1, 11, 697)
+    assertPage(1, 12, 697)
 
     faction = "Alliance"
     choices = displayOrder(true)
     UIParent:SetHeight(480)
     fireAddonEvent("UI_SCALE_CHANGED")
-    assertPage(1, 5, 469)
+    assertPage(1, 6, 469)
     click(nextPage)
-    assertPage(6, 9, 469)
+    assertPage(7, 11, 469)
     click(nextPage)
-    assertPage(10, 13, 469)
+    assertPage(12, 16, 469)
     click(nextPage)
-    assertPage(14, 17, 469)
+    assertPage(17, 21, 469)
     click(nextPage)
-    assertPage(18, 22, 469)
+    assertPage(22, 22, 469)
     faction = "Horde"
     choices = displayOrder(false)
     slash("secrets")
     slash("secrets")
-    assertPage(18, 21, 469)
+    assertPage(16, 21, 469)
     assert(not controls.routes["baby-crocolisk"]:IsVisible(), "The Alliance route stays hidden on the Horde page")
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
-    assertPage(12, 21, 697)
+    assertPage(13, 21, 697)
     UIParent:SetHeight(1080)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     assert(not range:IsVisible() and cozyButton:IsVisible() and lateRoute:IsVisible(),
         "A tall viewport restores the full catalog")
+    assertNavigationPosition()
 
     UIParent:SetHeight(720)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     click(nextPage)
-    assertPage(12, 21, 697)
+    assertPage(13, 21, 697)
     local search = controls.routeSearch
     search:SetText("   sLiMe  ")
     local slime = controls.routes["excitable-slime"]
@@ -1071,6 +1146,17 @@ do
     click(controls.routeCategory)
     click(controls.routeCategoryOptions.pets)
     assert(slime:IsVisible() and not controls.routeEmpty:IsVisible(), "Changing categories restores a matching route")
+    local pets = assert(controls.routeHeadings["Pets"])
+    click(pets)
+    assert(pets:IsVisible() and pets:GetText() == "+  PETS" and not slime:IsVisible()
+        and not controls.routeEmpty:IsVisible(),
+        "A collapsed category stays visible with matching results and hides its route rows")
+    search:SetText("gust")
+    local gustjumper = controls.routes["musical-gustjumper"]
+    assert(pets:IsVisible() and not gustjumper:IsVisible(), "Changing search preserves the category's collapse state")
+    click(pets)
+    assert(pets:GetText() == "-  PETS" and gustjumper:IsVisible() and not slime:IsVisible(),
+        "Expanding a category restores only the routes matching the current search")
     search:SetText("[")
     assert(controls.routeEmpty:IsVisible() and not slime:IsVisible(), "Search handles pattern characters literally")
     search:SetText("slime")
@@ -1078,17 +1164,35 @@ do
     click(slime)
     assert(not search:IsVisible() and not search:HasFocus() and not controls.routeCategory:IsVisible(),
         "Active routes hide browse controls and release search focus")
+    assertNavigationPosition()
     click(controls.stop)
     assert(search:IsVisible() and search:GetText() == "slime" and slime:IsVisible(),
         "Pausing a route restores the filtered journal")
     click(controls.routeCategory)
     click(controls.routeCategoryOptions.all)
     search:SetText("")
-    assertPage(1, 11, 697)
+    assertPage(1, 12, 697)
+    click(nextPage)
+    click(controls.routeHeadings["Quests & Mysteries"])
+    click(controls.routeHeadings["Professions"])
+    click(controls.routeHeadings["Gear & Utility"])
+    assert(pets:IsVisible() and slime:IsVisible() and not cozyButton:IsVisible()
+        and not range:IsVisible() and not nextPage:IsVisible(),
+        "Collapsing sections on the last page clamps to the remaining page and clears the pager")
+    click(pets)
+    click(controls.routeHeadings["Toys & Collectibles"])
+    assert(pets:IsVisible() and not slime:IsVisible() and not controls.routeEmpty:IsVisible()
+        and secrets.progress:GetText() == "0 of 21 Built-In Routes Finished",
+        "All categories can collapse without changing route completion counts")
     click(controls.routeCategory)
     UIParent:SetHeight(1080)
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     assert(not controls.routeCategoryMenu:IsVisible(), "Resizing closes the category menu")
+    for _, heading in pairs(controls.routeHeadings) do
+        assert(heading:IsVisible() and heading:GetText():sub(1, 1) == "+")
+        click(heading)
+    end
+    assert(slime:IsVisible() and cozyButton:IsVisible(), "All categories can be reopened")
     faction = "Neutral"
     fireAddonEvent("DISPLAY_SIZE_CHANGED")
     assert(controls.routeEmpty:IsVisible()
@@ -1584,6 +1688,73 @@ do
     click(secrets.controls.navigation)
     assert(SecretCompassSecretDB.navigation == "hud", "The player can switch back to the compass")
     TomTom = nil
+end
+
+do
+    local nativeButton = SecretsCompassMinimapButton
+    local nativePanel = SecretsCompassSettings
+    local opens, registrations, visibilityChanges = 0, 0, 0
+    local providerOptions = {
+        enabled = false, showMinimap = true, showCardinals = true,
+        minimap = { minimapPos = 123, hide = false },
+        style = "arc", scale = 1, opacity = 1,
+    }
+    local broker, brokerOptions
+    local brokerLib = { NewDataObject = function(_, name, object)
+        assert(name == "SecretsCompass" and object.type == "launcher")
+        broker = object
+        return object
+    end }
+    local iconLib = {
+        Register = function(_, name, object, options)
+            assert(name == "SecretsCompass" and object == broker)
+            assert(options == providerOptions.minimap and options.minimapPos == 123)
+            registrations, brokerOptions = registrations + 1, options
+        end,
+        Show = function(_, name)
+            assert(name == "SecretsCompass" and not brokerOptions.hide)
+            visibilityChanges = visibilityChanges + 1
+        end,
+        Hide = function(_, name)
+            assert(name == "SecretsCompass" and brokerOptions.hide)
+            visibilityChanges = visibilityChanges + 1
+        end,
+    }
+    LibStub = function(name, silent)
+        assert(silent == true, "Missing optional libraries are silent")
+        if name == "LibDataBroker-1.1" then return brokerLib end
+        if name == "LibDBIcon-1.0" then return iconLib end
+    end
+    local ui = namespace.CreateSettingsUI({
+        get = function() return providerOptions end,
+        set = function(key, value) providerOptions[key] = value end,
+        openSecrets = function() opens = opens + 1 end,
+        styles = namespace.CompassStyles,
+        styleY = namespace.CompassStyleY,
+        styleSegmentShown = namespace.CompassStyleSegmentShown,
+        minScale = 60, maxScale = 150, scaleStep = 5,
+    })
+    ui:AttachMinimap()
+    ui:AttachMinimap()
+    assert(registrations == 1 and SecretsCompassMinimapButton == nativeButton,
+        "When both libraries exist, register a single launcher without a second native frame")
+    broker.OnClick(nil, "LeftButton")
+    assert(opens == 1 and not providerOptions.enabled, "Broker left click opens Secrets without changing the HUD")
+    broker.OnClick(nil, "RightButton")
+    assert(SecretsCompassSettings ~= nativePanel and SecretsCompassSettings:IsVisible(),
+        "Broker right click opens Settings")
+    ui:Refresh()
+    brokerOptions.hide = true
+    providerOptions.enabled = true
+    ui:Refresh()
+    assert(visibilityChanges == 0 and brokerOptions.hide, "Unrelated refreshes preserve bag-controlled visibility")
+    providerOptions.showMinimap = false
+    ui:Refresh()
+    assert(visibilityChanges == 1 and brokerOptions.hide, "The visibility setting hides the registered button")
+    providerOptions.showMinimap = true
+    ui:Refresh()
+    assert(visibilityChanges == 2 and not brokerOptions.hide, "The visibility setting shows the registered button")
+    LibStub = nil
 end
 
 print("SecretsCompass mocks passed: secret-only tracking, HUD controls, categorized standalone secrets, spoiler levels, verified progress, the SecretChecklist companion, and external waypoint navigation")

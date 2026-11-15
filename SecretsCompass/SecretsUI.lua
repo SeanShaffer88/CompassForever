@@ -6,7 +6,7 @@ local portraitPath = "Interface\\AddOns\\" .. addonName .. "\\Media\\MinimapComp
 local journalHeight = 471
 local routeRowHeight, routeHeadingHeight = 30, 24
 local browseToolbarHeight = 34
-local routeListTop, routeFrameHeight, routePagerHeight = 157 + browseToolbarHeight, 231 + browseToolbarHeight, 30
+local routeListTop, routeFrameHeight, routePagerHeight = 157 + browseToolbarHeight, 201 + browseToolbarHeight, 30
 local routePageInset = 10
 local categoryOrder = {
     { key = "pets", label = "Pets", icon = "Ability_Hunter_BeastCall" },
@@ -20,7 +20,7 @@ for index, category in ipairs(categoryOrder) do
     category.order = index
     routeCategories[category.key] = category
 end
-local otherCategory = { order = #categoryOrder + 1, label = "Other Secrets", icon = "INV_Misc_QuestionMark" }
+local otherCategory = { key = "other", order = #categoryOrder + 1, label = "Other Secrets", icon = "INV_Misc_QuestionMark" }
 local gold = { 0.96, 0.78, 0.43 }
 local muted = { 0.73, 0.67, 0.55 }
 local finishedColor = { 0.68, 0.76, 0.48 }
@@ -69,7 +69,7 @@ local function button(parent, caption, width, x, y, onClick)
     control:SetDisabledFontObject(GameFontDisableSmall)
     control:SetText(caption)
     control:SetScript("OnClick", onClick)
-    return control
+    return control, text
 end
 
 local function routeRow(parent, route, y, onClick)
@@ -145,7 +145,7 @@ local function routeCategory(route)
     return routeCategories[route.category] or otherCategory
 end
 
-local function paginateRoutes(routes, screenHeight)
+local function paginateRoutes(routes, collapsed, screenHeight)
     local sorted = {}
     for i, route in ipairs(routes) do
         sorted[i] = route
@@ -162,48 +162,53 @@ local function paginateRoutes(routes, screenHeight)
         return aTitle < bTitle
     end)
 
-    local contentHeight, previousCategory = #sorted * routeRowHeight, nil
+    local entries, contentHeight, previousCategory = {}, 0, nil
     for _, route in ipairs(sorted) do
         local category = routeCategory(route)
-        if category ~= previousCategory then
-            contentHeight = contentHeight + routeHeadingHeight
-            previousCategory = category
+        local newHeading = category ~= previousCategory
+        local expanded = not collapsed[category.key]
+        if newHeading or expanded then
+            local height = (newHeading and routeHeadingHeight or 0) + (expanded and routeRowHeight or 0)
+            entries[#entries + 1] = {
+                category = category, heading = newHeading, route = expanded and route or nil, height = height,
+            }
+            contentHeight = contentHeight + height
         end
+        previousCategory = category
     end
 
     local naturalHeight = routeFrameHeight + math.max(routeHeadingHeight + routeRowHeight, contentHeight)
     local availableHeight = screenHeight - routePageInset
     local maxHeight = contentHeight
-    if #routes > 1 and screenHeight > 0 and naturalHeight > availableHeight then
+    if #entries > 1 and screenHeight > 0 and naturalHeight > availableHeight then
         maxHeight = math.max(routeHeadingHeight + routeRowHeight, availableHeight - routeFrameHeight - routePagerHeight)
     end
 
-    local current = { first = 1, last = 0, height = 0, rows = {} }
-    local pages, tallest = { current }, 0
-    previousCategory = nil
-    for index, route in ipairs(sorted) do
-        local category = routeCategory(route)
-        local newHeading = category ~= previousCategory
-        local rowHeight = routeRowHeight + (newHeading and routeHeadingHeight or 0)
-        if current.height + rowHeight > maxHeight then
-            current = { first = index, last = index - 1, height = 0, rows = {} }
+    local current = { height = 0, rows = {} }
+    local pages, tallest, routeIndex = { current }, 0, 0
+    for _, entry in ipairs(entries) do
+        local heading, height = entry.heading, entry.height
+        if current.height + height > maxHeight then
+            current = { height = 0, rows = {} }
             pages[#pages + 1] = current
-            newHeading = true
-        end
-        local position = routeListTop + current.height
-        if newHeading then
-            current.height = current.height + routeHeadingHeight
+            if not heading then
+                heading = true
+                height = height + routeHeadingHeight
+            end
         end
         current.rows[#current.rows + 1] = {
-            route = route, heading = newHeading and category or nil, position = position,
+            route = entry.route, heading = heading and entry.category or nil, position = routeListTop + current.height,
         }
-        current.last = index
-        current.height = current.height + routeRowHeight
+        if entry.route then
+            routeIndex = routeIndex + 1
+            current.first = current.first or routeIndex
+            current.last = routeIndex
+        end
+        current.height = current.height + height
         tallest = math.max(tallest, current.height)
-        previousCategory = category
     end
     local height = #pages > 1 and routeFrameHeight + routePagerHeight + tallest or naturalHeight
-    return pages, height
+    return pages, height, routeIndex
 end
 
 local function makePanel(api, changePage, changeFilter)
@@ -340,13 +345,13 @@ local function makePanel(api, changePage, changeFilter)
     surface(menu, "BACKGROUND", 0.09, 0.075, 0.057, 1)
     menu:Hide()
 
-    controls.routeCategory = button(body, "All Types  ▾", 154, 252, -148, function()
+    controls.routeCategory = button(body, "All Types  v", 154, 252, -148, function()
         search:ClearFocus()
         menu:SetShown(not menu:IsShown())
     end)
     local function addCategoryOption(key, caption, index)
         controls.routeCategoryOptions[key] = button(menu, caption, 150, 2, -2 - index * 24, function()
-            controls.routeCategory:SetText(caption .. "  ▾")
+            controls.routeCategory:SetText(caption .. "  v")
             menu:Hide()
             changeFilter(search:GetText(), key)
         end)
@@ -469,24 +474,20 @@ local function makePanel(api, changePage, changeFilter)
     controls.mapCommand:ClearAllPoints()
     controls.mapCommand:SetPoint("BOTTOMLEFT", 18, 54)
 
-    controls.navigation = button(body, "", 176, 18, 0, api.switchNavigation)
-    controls.navigation:ClearAllPoints()
-    controls.navigation:SetPoint("BOTTOMLEFT", 18, 14)
-    panel.navigationStatus = label(body, "GameFontHighlightSmall", 203, 0, 203, 31)
-    panel.navigationStatus:ClearAllPoints()
-    panel.navigationStatus:SetPoint("BOTTOMLEFT", 203, 10)
+    controls.navigation = button(body, "", 176, 230, -12, api.switchNavigation)
+    panel.navigationStatus = label(body, "GameFontHighlightSmall", 77, -9, 145, 42)
     panel.navigationStatus:SetTextColor(0.74, 0.77, 0.76)
     panel.resetMapCommand()
 
     controls.routePagePrevious = button(body, "Previous Page", 110, 18, 0, function() changePage(-1) end)
     controls.routePagePrevious:ClearAllPoints()
-    controls.routePagePrevious:SetPoint("BOTTOMLEFT", 18, 54)
+    controls.routePagePrevious:SetPoint("BOTTOMLEFT", 18, 24)
     controls.routePageNext = button(body, "Next Page", 110, 296, 0, function() changePage(1) end)
     controls.routePageNext:ClearAllPoints()
-    controls.routePageNext:SetPoint("BOTTOMLEFT", 296, 54)
+    controls.routePageNext:SetPoint("BOTTOMLEFT", 296, 24)
     controls.routePageRange = label(body, "GameFontHighlight", 133, 0, 158, 24)
     controls.routePageRange:ClearAllPoints()
-    controls.routePageRange:SetPoint("BOTTOMLEFT", 133, 54)
+    controls.routePageRange:SetPoint("BOTTOMLEFT", 133, 24)
     controls.routePageRange:SetJustifyH("CENTER")
     controls.routePageRange:SetJustifyV("MIDDLE")
 
@@ -523,6 +524,7 @@ function namespace.CreateSecretsUI(api)
     local panel, finished
     local page = 1
     local query, categoryFilter = "", "all"
+    local collapsed = {}
 
     function ui:Refresh()
         if not panel then
@@ -600,53 +602,67 @@ function namespace.CreateSecretsUI(api)
                     or "No secrets match your search or category.")
                 controls.routeEmpty:Show()
             end
-            local pages, layoutHeight = paginateRoutes(filtered, UIParent:GetHeight())
+            local pages, layoutHeight, expandedCount = paginateRoutes(filtered, collapsed, UIParent:GetHeight())
             height, pageCount = layoutHeight, #pages
             paging = pageCount > 1
             page = math.min(page, pageCount)
             local visible = pages[page]
             if paging then
-                controls.routePageRange:SetText(("%d–%d of %d"):format(visible.first, visible.last, #filtered))
+                controls.routePageRange:SetText(visible.first
+                    and ("%d–%d of %d"):format(visible.first, visible.last, expandedCount)
+                    or ("Page %d of %d"):format(page, pageCount))
             end
-            local ruleY = paging and 83 or 45
+            local ruleY = paging and 53 or 15
             controls.routeRule:ClearAllPoints()
             controls.routeRule:SetPoint("BOTTOMLEFT", 18, ruleY)
             controls.routeRule:SetPoint("BOTTOMRIGHT", -18, ruleY)
             for rowIndex, entry in ipairs(visible.rows) do
-                local choice = entry.route
-                local id = choice.id
                 local position = -entry.position
                 local category = entry.heading
                 if category then
                     local heading = controls.routeHeadings[category.label]
                     if not heading then
-                        heading = label(panel.body, "GameFontNormal", 18, position, 388, 18)
-                        heading:SetText(category.label:upper())
-                        heading:SetTextColor(unpack(gold))
+                        local key = category.key
+                        local title
+                        heading, title = button(panel.body, "", 388, 18, position, function()
+                            collapsed[key] = not collapsed[key]
+                            controls.routeCategoryMenu:Hide()
+                            self:Refresh()
+                        end)
+                        heading:SetHeight(20)
+                        title:SetSize(372, 20)
+                        title:ClearAllPoints()
+                        title:SetPoint("LEFT", heading, "LEFT", 8, 0)
+                        title:SetJustifyH("LEFT")
                         controls.routeHeadings[category.label] = heading
                     else
                         heading:ClearAllPoints()
                         heading:SetPoint("TOPLEFT", 18, position)
                     end
+                    heading:SetText((collapsed[category.key] and "+  " or "-  ") .. category.label:upper())
                     heading:Show()
                     position = position - routeHeadingHeight
                 end
-                local row = controls.routes[id]
-                if not row then
-                    row = routeRow(panel.body, choice, position, function() api.start(id) end)
-                    controls.routes[id] = row
-                else
-                    row:ClearAllPoints()
-                    row:SetPoint("TOPLEFT", 18, position)
+                local choice = entry.route
+                if choice then
+                    local id = choice.id
+                    local row = controls.routes[id]
+                    if not row then
+                        row = routeRow(panel.body, choice, position, function() api.start(id) end)
+                        controls.routes[id] = row
+                    else
+                        row:ClearAllPoints()
+                        row:SetPoint("TOPLEFT", 18, position)
+                    end
+                    local resumeStep = api.getResumeStep(choice)
+                    local complete = api.hasFinished(choice)
+                    local shade = rowIndex % 2 == 0 and 0.011 or 0
+                    row.fill:SetColorTexture(0.13 + shade, 0.11 + shade, 0.085 + shade, 1)
+                    row.title:SetTextColor(unpack(complete and not resumeStep and muted or gold))
+                    row.action:SetTextColor(unpack(complete and not resumeStep and finishedColor or muted))
+                    row.action:SetText(resumeStep and ("Resume · Step %d"):format(resumeStep) or (complete and "Replay" or "Track"))
+                    row:Show()
                 end
-                local resumeStep = api.getResumeStep(choice)
-                local complete = api.hasFinished(choice)
-                local shade = rowIndex % 2 == 0 and 0.011 or 0
-                row.fill:SetColorTexture(0.13 + shade, 0.11 + shade, 0.085 + shade, 1)
-                row.title:SetTextColor(unpack(complete and not resumeStep and muted or gold))
-                row.action:SetTextColor(unpack(complete and not resumeStep and finishedColor or muted))
-                row.action:SetText(resumeStep and ("Resume · Step %d"):format(resumeStep) or (complete and "Replay" or "Track"))
-                row:Show()
             end
         end
         controls.routePagePrevious:SetShown(paging)
