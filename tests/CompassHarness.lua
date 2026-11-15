@@ -966,11 +966,16 @@ do
         ["dawn-waker-eluviana"] = {
             {2521, 417, 234}, {2521, 476, 719}, {1447, 660, 541}, {2482, 727, 372}, {2521, 583, 245},
         },
+        ["manual-scavenger-hunt"] = {
+            {1417, 226.9, 241.7}, {1424, 876.1, 479.1}, {1458, 228.6, 361.9},
+            {2548, 265.6, 455.8}, {2548, 267.2, 477.4}, {1419, 451.9, 164.7},
+            {1449, 521.6, 496.4}, {1449, 524.8, 511.0}, {1434, 144.3, 271.5}, {1453, 672.0, 825.3},
+        },
     }
     for _, side in ipairs({ "Horde", "Alliance" }) do
         faction = side
         local choices = namespace.StandaloneSecrets()
-        assert(#choices == 7, "Every built-in route is available to either faction")
+        assert(#choices == 8, "Every built-in route is available to either faction")
         for i = 3, #choices do
             local choice = choices[i]
             assert(choice.sourceURL and secrets.controls.routes[choice.id]:IsVisible(),
@@ -992,6 +997,22 @@ do
             "Interior puzzle and summon steps have landmark instructions")
         assert(#choices[5].steps[1].waypoints == 9 and #choices[7].steps[4].waypoints == 5,
             "Spawn alternatives stay in the same step")
+        local manual = choices[8]
+        assert(manual.id == "manual-scavenger-hunt" and manual.ongoing and #manual.steps == 11,
+            "The Manual Scavenger Hunt is an ongoing standalone route for either faction")
+        for index = 1, 5 do
+            assert(manual.steps[index].clue:lower():find("last known", 1, true),
+                "Historical status is visible without spoiling the location")
+            for _, pin in ipairs(manual.steps[index].waypoints) do
+                assert(pin.label:lower():find("last known", 1, true),
+                    "Historical waypoints are labeled Last Known")
+            end
+        end
+        for _, index in ipairs({ 6, 8, 9 }) do
+            assert(#manual.steps[index].waypoints == 0, "Displaced side clues have no active map targets")
+        end
+        assert(#manual.steps[11].waypoints == 0 and manual.steps[11].title == "Unresolved Clues",
+            "Unsolved fragments have no invented waypoint")
         local dawn = choices[7]
         local isAlliance = side == "Alliance"
         local total = isAlliance and 23 or 22
@@ -1011,7 +1032,31 @@ do
             and legacy:GetResumeStep(dawn) == total, "Explicit pauses take precedence over legacy chapter progress")
     end
     faction = "Horde"
-    assert(secrets.progress:GetText() == "0 of 7 Built-In Routes Finished")
+    assert(secrets.progress:GetText() == "0 of 8 Built-In Routes Finished")
+    local manual = secrets.controls.routes["manual-scavenger-hunt"]
+    local _, _, rowY = manual:GetPoint()
+    assert(26 - rowY + manual:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
+        "The last standalone route row fits above navigation")
+    click(manual)
+    assert(secrets.routeTitle:GetText() == "Manual Scavenger Hunt" and not secrets.controls.mapCommand:IsVisible())
+    slash("step 3")
+    click(secrets.controls.revealCoordinates)
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 2548 26.56 45.58",
+        "Riverglades uses the replacement location instead of Blackrock")
+    slash("step 7")
+    click(secrets.controls.mapCommand)
+    assert(secrets.controls.mapCommandInput:GetText() == "/mappin 1434 14.43 27.15",
+        "Stranglethorn maps the observed torch at the old cache location")
+    slash("step 8")
+    assert(not secrets.controls.mapCommand:IsVisible(), "The missing Alterac stash is a text-only lead")
+    slash("step 11")
+    click(secrets.controls.revealFull)
+    slash("next")
+    assert(secrets.stepTitle:GetText() == "Unresolved Clues" and not secrets.controls.next.enabled
+        and SecretCompassSecretDB.index == 11 and not SecretCompassSecretDB.finishedRoutes["manual-scavenger-hunt"],
+        "The unresolved checkpoint preserves the active route")
+    click(secrets.controls.stop)
 
     local torch = secrets.controls.routes["night-watchmans-torch"]
     click(torch)

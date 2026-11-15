@@ -753,6 +753,99 @@ local function dawnWakerRoute(faction)
     return ns.NormalizeSecretRoute(route)
 end
 
+local function manualScavengerHuntRoute()
+    return ns.NormalizeSecretRoute({
+        id = "manual-scavenger-hunt",
+        title = "Manual Scavenger Hunt",
+        sourceURL = "https://www.wowhead.com/forever/news/the-secret-finding-discord-is-sleuthing-again-in-wow-forever-383414",
+        ongoing = true,
+        steps = {
+            {
+                title = "Last Known: Burnt Page at Thoradin's Wall",
+                note = "The page was in a barrel beside the Cozy Sleeping Bag at Thoradin's Wall. Start the "
+                    .. "climb from the Hillsbrad side, then check the barrel. The page's clue points to the "
+                    .. "Undercity sewers. Live players have reported mixed results when looking for the page.",
+                clue = "Last known site. Look near the old wall. The object may no longer be visible.",
+                waypoints = {
+                    { mapID = 1417, x = 0.2269, y = 0.2417, label = "Last Known Burnt Page" },
+                    { mapID = 1424, x = 0.8761, y = 0.4791, label = "Last Known Wall Climb Approach" },
+                },
+            },
+            routeStep("Last Known: Undercity Keystone Fragment",
+                "Players found Torn Pages in a barrel among debris inside the back entrance to the Undercity "
+                    .. "sewers. The knife between the book's pages yielded the uncommon Keystone Fragment. "
+                    .. "The page refers to page 155 of the printed manual. The object was "
+                    .. "later reported missing or moved. Alliance players should watch for Horde guards.",
+                { mapID = 1458, x = 0.2286, y = 0.3619, label = "Last Known Torn Pages and Knife" },
+                "Last known site. Search beneath the city. The object was reported missing or moved."),
+            {
+                title = "Last Known: Riverglades Stone Key",
+                note = "The pack behind a sleeping Twilight Peon was reported to require the uncommon "
+                    .. "Keystone Fragment and held the Stone Key. Use the cliff approach before looking "
+                    .. "below. The pack had moved here from Blackrock Mountain during beta and was later "
+                    .. "reported missing or moved again. Its present location is unconfirmed.",
+                clue = "Last known site. Check below the cliff. The object was reported missing or moved.",
+                waypoints = {
+                    { mapID = 2548, x = 0.2656, y = 0.4558, label = "Last Known Stone Key Pack" },
+                    { mapID = 2548, x = 0.2672, y = 0.4774, label = "Last Known Cliff Jump-Off" },
+                },
+            },
+            routeStep("Last Known: Burnt Page at Dreadmaul Hold",
+                "The second Burnt Page was at Dreadmaul Hold in the Blasted Lands and required the Stone Key. "
+                    .. "Its riddle refers to three mysterious places, including a tomb and a place associated "
+                    .. "with heat and light. The page was reported missing or moved. The full riddle remains unsolved.",
+                { mapID = 1419, x = 0.4519, y = 0.1647, label = "Last Known Dreadmaul Hold Burnt Page" },
+                "Last known site. A riddle points to three places. The object was reported missing or moved."),
+            {
+                title = "Last Known: Un'Goro Hidden Stash",
+                note = "Players revealed a stash in Ringo's cave with the Night Watchman's Torch lit. "
+                    .. "Use the Torch route in the journal if you still need one. The stash's availability "
+                    .. "in the live game, how to open it, and its connection to the hunt remain unconfirmed.",
+                clue = "Last known site. A lit torch once revealed a stash. Its current status is uncertain.",
+                waypoints = {
+                    { mapID = 1449, x = 0.5216, y = 0.4964, label = "Last Known Hidden Stash in Ringo's Cave" },
+                    { mapID = 1449, x = 0.5248, y = 0.5110, label = "Last Known Stash Cave Approach" },
+                },
+            },
+            routeStep("Unresolved: Stonetalon Brittle Key",
+                "A stash in the tent by the sleeping bag quest camp at 40.71, 52.75 in Stonetalon Mountains "
+                    .. "once yielded a Brittle Key that lasted one hour. The stash was reported missing or moved. "
+                    .. "Its relationship to the manual hunt remains unconfirmed.",
+                nil, "Unresolved side clue. A timed key's source was reported missing or moved."),
+            routeStep("Standing Torch at the Former Cache",
+                "A standing torch marks the former Traveler's Cache site in Stranglethorn Vale. "
+                    .. "During beta, the Brittle Key opened the cache. Players reported finding a Torn Page "
+                    .. "about calm before a storm, while others found Pocket Lint. The old cache is missing. "
+                    .. "This visit is optional because the torch's purpose and its connection to the hunt remain unresolved.",
+                { mapID = 1434, x = 0.1443, y = 0.2715, label = "Standing Torch (Unresolved)" },
+                "Unresolved side clue. A standing torch marks the former cache site."),
+            routeStep("Unresolved: Alterac Ancient Runestone",
+                "A stash under a shield by a wrecked cart was reported at 55.6, 48.3 in the Alterac "
+                    .. "Mountains. Players used a lit torch and the uncommon Keystone Fragment to recover "
+                    .. "an Ancient Runestone. The stash was later reported missing. The runestone's use and "
+                    .. "its connection to the manual hunt remain unknown.",
+                nil, "Unresolved side clue. An old runestone's whereabouts are uncertain."),
+            routeStep("Unresolved: Western Plaguelands Skeletal Chest",
+                "An underwater Skeletal Chest was reported at 61.6, 72.8 in the Western Plaguelands. "
+                    .. "Reports mention a Keystone Fragment requirement. The chest was later reported missing "
+                    .. "or moved. Its current location and role remain unconfirmed.",
+                nil, "Unresolved side clue. The whereabouts and lock of an underwater chest are uncertain."),
+            routeStep("Unresolved: Stormwind Note",
+                "Players documented a note at this Stormwind location. Its connection to the manual hunt "
+                    .. "remains unconfirmed. This is an optional check. Horde players can skip the visit.",
+                { mapID = 1453, x = 0.6720, y = 0.8253, label = "Reported Stormwind Note" },
+                "Unresolved side clue. A note was reported here. Its connection is uncertain."),
+            routeStep("Unresolved Clues",
+                "Two higher-quality Keystone Fragments remain unlocated. The interpretation of the three "
+                    .. "places, the final lock, and any reward remain unconfirmed. A Wowhead comment links a "
+                    .. "podcast sign to an outhouse in the Barrens. Players also reported a dead orc in "
+                    .. "Redridge and a snake corpse by the Deadmines gate. Whether any relate to the hunt "
+                    .. "remains unverified. The exact order of the clues is unconfirmed. Pause here to keep your place.",
+                nil, "The remaining clues are unresolved. You have reached the end of the documented trail."),
+        },
+    })
+end
+
 function ns.StandaloneSecrets()
     -- Route facts cross-checked against the Forever guides from Method and Wowhead.
     local source = "https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards"
@@ -816,5 +909,5 @@ function ns.StandaloneSecrets()
         id = "cozy-sleeping-bag:" .. faction,
         title = "Cozy Sleeping Bag", sourceURL = source, steps = steps,
     }), alcazRoute(faction), scarletBannerRoute(), musicalGustjumperRoute(),
-        nightWatchmansTorchRoute(), lynTheIgnoredRoute(), dawnWakerRoute(faction) }
+        nightWatchmansTorchRoute(), lynTheIgnoredRoute(), dawnWakerRoute(faction), manualScavengerHuntRoute() }
 end
