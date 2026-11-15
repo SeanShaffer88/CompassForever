@@ -621,7 +621,7 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
                     and ("%d–%d of %d"):format(visible.first, visible.last, expandedCount)
                     or ("Page %d of %d"):format(page, pageCount))
             end
-            local ruleY = paging and 53 or 15
+            local ruleY = paging and 51 or 15
             controls.routeRule:ClearAllPoints()
             controls.routeRule:SetPoint("BOTTOMLEFT", 18, ruleY)
             controls.routeRule:SetPoint("BOTTOMRIGHT", -18, ruleY)
