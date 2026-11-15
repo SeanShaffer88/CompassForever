@@ -1974,7 +1974,8 @@ do
         local _, _, searchY = journal.controls.routeSearch:GetPoint()
         assert(input:IsVisible() and input.focused and input.highlighted and input:GetText() == command
             and anchor == "TOPLEFT" and inputY - input:GetHeight() >= searchY
-            and not journal.stepTitle:IsVisible() and SecretCompassSecretDB.route == nil,
+            and not journal.stepTitle:IsVisible() and not journal.controls.showOnMap:IsVisible()
+            and SecretCompassSecretDB.route == nil,
             "Copy opens a selected command before search while leaving the route paused")
         return input
     end
@@ -2017,7 +2018,8 @@ do
     local bookmark = assert(saved.lastPaused)
     assert(journal.controls.continueLast:IsVisible(), "Pausing creates the Continue Last Secret shortcut")
     assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3 · Test Map 1432 (77.7, 74.9)")
-    assert(journal.controls.copyWaypoint:IsVisible() and not journal.controls.setWaypoint:IsVisible(),
+    assert(journal.controls.copyWaypoint:IsVisible() and not journal.controls.setWaypoint:IsVisible()
+        and not journal.controls.showOnMap:IsVisible(),
         "When native map APIs are unavailable, Copy Waypoint is still available")
 
     local baseMapPermission, baseSetWaypoint, baseMapPoint = C_Map.CanSetUserWaypointOnMap, C_Map.SetUserWaypoint, UiMapPoint
@@ -2086,6 +2088,42 @@ do
             "Set Waypoint closes Copy and preserves the paused route and navigation preference")
     end
 
+    local originalOpenWorldMap, originalWorldMapFrame = C_Map.OpenWorldMap, WorldMapFrame
+    local mapOpens, shownMap, mapShown, mapOpenMode = {}, nil, false, "confirm"
+    WorldMapFrame = {
+        IsShown = function() return mapShown end,
+        GetMapID = function() return shownMap end,
+    }
+    local function openWorldMap(mapID)
+        mapOpens[#mapOpens + 1] = mapID
+        if mapOpenMode == "throw" then
+            error("Mock map open failure")
+        elseif mapOpenMode == "confirm" then
+            shownMap, mapShown = mapID, true
+        end
+    end
+    C_Map.OpenWorldMap = openWorldMap
+    local function assertShowOnMap(opened, expectedMap)
+        local action = opened.controls.showOnMap
+        local reads, sets, clears = getterCalls, setterCalls, clearCalls
+        local bookmark, navigation, pin = saved.lastPaused, saved.navigation, waypoint
+        local clearWasVisible = opened.controls.clearWaypoint:IsVisible()
+        local before = #mapOpens
+        local _, actionX, actionY = action:GetPoint()
+        local _, hintX = opened.stepTitle:GetPoint()
+        assert(action:IsVisible() and action:GetText() == "Show on Map"
+            and hintX + opened.stepTitle:GetWidth() < actionX and actionY == -117,
+            "Show on Map fits beside the journal hint")
+        click(action)
+        assert(#mapOpens == before + 1 and mapOpens[#mapOpens] == expectedMap and not opened:IsShown(),
+            "Only a confirmed open to the precise saved map dismisses the journal")
+        SlashCmdList.SECRETSCOMPASS("secrets")
+        assert(opened:IsShown() and opened.controls.clearWaypoint:IsVisible() == clearWasVisible
+            and getterCalls == reads and setterCalls == sets and clearCalls == clears and waypoint == pin
+            and saved.route == nil and saved.lastPaused == bookmark and saved.navigation == navigation,
+            "Showing the map does not alter the player pin, journal ownership, or route")
+    end
+
     saved.lastPaused = nil
     journal = reloadJournal(saved)
     assert(not journal.controls.continueLast:IsVisible()
@@ -2106,7 +2144,46 @@ do
     local condorSummary = "Step 1 of 1 · Location 2 of 3 · Test Map 1432 (77.7, 74.9)"
     assertResumeDetails(journal, condor.title, condorSummary)
     assertResumeTooltip(journal, condorSummary)
+    local showOnMap = journal.controls.showOnMap
     local copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    click(showOnMap)
+    assert(#mapOpens == 0, "The hidden map action cannot run behind the copy field")
+    C_Map.OpenWorldMap = nil
+    copyInput.scripts.OnEscapePressed(copyInput)
+    assert(not showOnMap:IsVisible() and journal.stepTitle:GetWidth() == 388,
+        "Closing Copy restores the correct layout when map opening becomes unavailable")
+    C_Map.OpenWorldMap = openWorldMap
+    journal.controls.routeSearch:SetText("no matching secret")
+    assertShowOnMap(journal, 1432)
+
+    mapOpenMode = "throw"
+    click(showOnMap)
+    assert(journal:IsShown() and journal.stepTitle:GetText() == "Could not open the saved map.",
+        "A native map-open error is contained and reported inline")
+    mapOpenMode, shownMap, mapShown = "unconfirmed", 1, true
+    journal.controls.routeSearch:SetText("no matching secret")
+    local originalHint = journal.stepTitle:GetText()
+    click(showOnMap)
+    assert(journal:IsShown() and journal.stepTitle:GetText() == originalHint,
+        "A void call showing another map leaves the journal open")
+    shownMap, mapShown = 1432, secret
+    click(showOnMap)
+    assert(journal:IsShown() and journal.stepTitle:GetText() == originalHint,
+        "An unreadable shown state cannot confirm the map")
+    shownMap, mapShown = secret, true
+    click(showOnMap)
+    assert(journal:IsShown() and journal.stepTitle:GetText() == originalHint,
+        "An unreadable map ID cannot confirm the map")
+
+    saved.reveals[condor.id] = "distance"
+    local openCount = #mapOpens
+    click(showOnMap)
+    assert(#mapOpens == openCount and not showOnMap:IsVisible(),
+        "A stale Show on Map click rechecks the paused reveal level")
+    saved.reveals[condor.id] = "coordinates"
+    mapOpenMode = "confirm"
+    journal.controls.routeSearch:SetText("no matching secret")
+    copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
     assert(permissionCalls == 0 and pointCalls == 0 and setterCalls == 0 and getterCalls == 0
         and not journal.controls.clearWaypoint:IsVisible() and waypoint == previousPlayerPin,
         "Opening, filtering and copying do not touch the player map pin")
@@ -2115,6 +2192,7 @@ do
     local clear = journal.controls.clearWaypoint
     assert(clear:IsVisible() and journal.controls.continueLast:GetText() == "Continue"
         and getterCalls == 1, "One synchronous update and a matching read enable Clear")
+    assertShowOnMap(journal, 1432)
     assertResumeDetails(journal, condor.title, condorSummary)
     local _, setX = journal.controls.setWaypoint:GetPoint()
     local _, clearX = clear:GetPoint()
@@ -2249,7 +2327,8 @@ do
         assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
         assertResumeTooltip(journal)
         assert(not journal.controls.copyWaypoint:IsVisible() and not journal.controls.setWaypoint:IsVisible()
-            and not journal.controls.clearWaypoint:IsVisible(), "Low reveal levels hide all waypoint actions")
+            and not journal.controls.clearWaypoint:IsVisible() and not journal.controls.showOnMap:IsVisible(),
+            "Low reveal levels hide all waypoint actions")
         click(journal.controls.continueLast)
     end
 
@@ -2290,6 +2369,7 @@ do
     copyInput = assertCopyWaypoint(journal, "/mappin 4 10.00 20.00")
     assertSetWaypoint(journal, 4, 0.10, 0.20)
     assert(journal.controls.clearWaypoint:IsVisible(), "Imported waypoints can be owned even when the map name is unknown")
+    assertShowOnMap(journal, 4)
     local readsBeforeReload, importedPin = getterCalls, waypoint
     C_Map.GetMapInfo = getMapInfo
     journal = reloadJournal(saved)
@@ -2310,6 +2390,7 @@ do
     assertResumeDetails(journal)
     C_Map.CanSetUserWaypointOnMap, C_Map.SetUserWaypoint, UiMapPoint = baseMapPermission, baseSetWaypoint, baseMapPoint
     C_Map.GetUserWaypoint, C_Map.ClearUserWaypoint = baseGetWaypoint, baseClearWaypoint
+    C_Map.OpenWorldMap, WorldMapFrame = originalOpenWorldMap, originalWorldMapFrame
     waypoint = previousPlayerPin
 end
 

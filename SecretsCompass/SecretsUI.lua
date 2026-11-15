@@ -177,6 +177,24 @@ local function readable(value)
     return not (issecretvalue and issecretvalue(value))
 end
 
+local function supportsOpenWorldMap()
+    return C_Map ~= nil and type(C_Map.OpenWorldMap) == "function"
+end
+
+local function worldMapShows(mapID)
+    local map = WorldMapFrame
+    if not readable(map) or not map then
+        return false
+    end
+    local ok, currentMap = pcall(function()
+        local shown = map:IsShown()
+        if readable(shown) and shown == true then
+            return map:GetMapID()
+        end
+    end)
+    return ok and readable(currentMap) and type(currentMap) == "number" and currentMap == mapID
+end
+
 local function normalizedCoordinate(value)
     return readable(value) and type(value) == "number" and value >= 0 and value <= 1
 end
@@ -634,9 +652,15 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
     copyHint:SetText("Ctrl+C to copy")
 
     local selectedCommand
+    panel.updateShowOnMap = function()
+        local show = panel.canShowSavedMap == true and not panel.selectedSavedMapCommand
+        controls.showOnMap:SetShown(show)
+        panel.stepTitle:SetWidth(show and 266 or 388)
+    end
     panel.resetMapCommand = function()
         if panel.selectedSavedMapCommand then
             panel.stepTitle:Show()
+            panel.canShowSavedMap = supportsOpenWorldMap() and savedWaypoint(api.getLastPausedRoute()) ~= nil
         end
         panel.selectedSavedMapCommand = nil
         selectedCommand = nil
@@ -644,6 +668,7 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
         mapInput:SetText("")
         mapInput:Hide()
         copyHint:Hide()
+        panel.updateShowOnMap()
     end
     local function showMapCommand(command, savedCommand)
         jumpInput:ClearFocus()
@@ -661,6 +686,7 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
         end
         panel.selectedSavedMapCommand = savedCommand
         panel.stepTitle:SetShown(savedCommand == nil)
+        panel.updateShowOnMap()
         selectedCommand = command
         mapInput:SetText(command)
         mapInput:Show()
@@ -709,6 +735,23 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
     end)
     controls.clearWaypoint = button(body, "Clear Waypoint", 94, 312, -74, function(self)
         applyWaypointAction(self, clearWorldMapWaypoint)
+    end)
+
+    controls.showOnMap = button(body, "Show on Map", 110, 296, -117, function(self)
+        if not panel:IsShown() or not self:IsShown() then
+            return
+        end
+        local waypoint = savedWaypoint(api.getLastPausedRoute())
+        if not waypoint or not supportsOpenWorldMap() then
+            refresh()
+            panel.stepTitle:SetText("Saved map unavailable.")
+            return
+        end
+        if not pcall(C_Map.OpenWorldMap, waypoint.mapID) then
+            panel.stepTitle:SetText("Could not open the saved map.")
+        elseif worldMapShows(waypoint.mapID) then
+            panel:Hide()
+        end
     end)
 
     controls.navigation = button(body, "", 176, 230, -12, api.switchNavigation)
@@ -1006,6 +1049,8 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
             or panel.mapCommandWaypoint ~= waypoint or panel.mapCommandReveal ~= reveal then
             panel.resetMapCommand()
         end
+        panel.canShowSavedMap = canCopyWaypoint and supportsOpenWorldMap()
+        panel.updateShowOnMap()
         panel.mapCommandRoute, panel.mapCommandIndex = route, index
         panel.mapCommandWaypoint, panel.mapCommandReveal = waypoint, reveal
         panel:SetHeight(height + (jumpRoute and 34 or 0) + (showMapCommand and 34 or 0))
