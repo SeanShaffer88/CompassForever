@@ -643,6 +643,11 @@ local function initSecrets()
     if type(SecretCompassSecretDB) ~= "table" then
         SecretCompassSecretDB = {}
     end
+    local collapsedCategories = SecretCompassSecretDB.collapsedCategories
+    if not readable(collapsedCategories) or type(collapsedCategories) ~= "table" then
+        collapsedCategories = {}
+        SecretCompassSecretDB.collapsedCategories = collapsedCategories
+    end
     secretTracker = ns.CreateSecretTracker(SecretCompassSecretDB, function()
         if not secretTracker then
             return
@@ -713,7 +718,7 @@ local function initSecrets()
         next = SecretsCompassNextStep,
         stop = function() secretTracker:Stop() end,
         cycle = function() secretTracker:CycleLocation() end,
-    })
+    }, collapsedCategories)
     resolveSecret()
     if ns.AttachSecretChecklist then
         ns.AttachSecretChecklist(function(route)

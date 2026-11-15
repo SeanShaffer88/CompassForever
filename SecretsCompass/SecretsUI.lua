@@ -145,6 +145,11 @@ local function routeCategory(route)
     return routeCategories[route.category] or otherCategory
 end
 
+local function categoryCollapsed(collapsed, key)
+    local value = collapsed[key]
+    return not (issecretvalue and issecretvalue(value)) and value == true
+end
+
 local function paginateRoutes(routes, collapsed, screenHeight)
     local sorted = {}
     for i, route in ipairs(routes) do
@@ -166,7 +171,7 @@ local function paginateRoutes(routes, collapsed, screenHeight)
     for _, route in ipairs(sorted) do
         local category = routeCategory(route)
         local newHeading = category ~= previousCategory
-        local expanded = not collapsed[category.key]
+        local expanded = not categoryCollapsed(collapsed, category.key)
         if newHeading or expanded then
             local height = (newHeading and routeHeadingHeight or 0) + (expanded and routeRowHeight or 0)
             entries[#entries + 1] = {
@@ -519,12 +524,12 @@ local function makePanel(api, changePage, changeFilter)
     return panel
 end
 
-function namespace.CreateSecretsUI(api)
+function namespace.CreateSecretsUI(api, collapsedCategories)
     local ui = {}
     local panel, finished
     local page = 1
     local query, categoryFilter = "", "all"
-    local collapsed = {}
+    local collapsed = type(collapsedCategories) == "table" and collapsedCategories or {}
 
     function ui:Refresh()
         if not panel then
@@ -625,7 +630,7 @@ function namespace.CreateSecretsUI(api)
                         local key = category.key
                         local title
                         heading, title = button(panel.body, "", 388, 18, position, function()
-                            collapsed[key] = not collapsed[key]
+                            collapsed[key] = not categoryCollapsed(collapsed, key) or nil
                             controls.routeCategoryMenu:Hide()
                             self:Refresh()
                         end)
@@ -639,7 +644,7 @@ function namespace.CreateSecretsUI(api)
                         heading:ClearAllPoints()
                         heading:SetPoint("TOPLEFT", 18, position)
                     end
-                    heading:SetText((collapsed[category.key] and "+  " or "-  ") .. category.label:upper())
+                    heading:SetText((categoryCollapsed(collapsed, category.key) and "+  " or "-  ") .. category.label:upper())
                     heading:Show()
                     position = position - routeHeadingHeight
                 end

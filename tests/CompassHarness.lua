@@ -260,6 +260,7 @@ SecretCompassSecretDB = {
     reveals = { ["login-fixture"] = "distance" },
 }
 event("ADDON_LOADED", "SecretsCompass")
+assert(next(SecretCompassSecretDB.collapsedCategories) == nil, "Legacy saves start with all journal categories expanded")
 event("PLAYER_ENTERING_WORLD")
 advance()
 assert(frame:IsVisible() and marker:IsVisible() and marker.labels[1].text == "Secret 240 yd",
@@ -1148,6 +1149,7 @@ do
     assert(slime:IsVisible() and not controls.routeEmpty:IsVisible(), "Changing categories restores a matching route")
     local pets = assert(controls.routeHeadings["Pets"])
     click(pets)
+    assert(SecretCompassSecretDB.collapsedCategories.pets == true, "Collapsing a heading saves its category key")
     assert(pets:IsVisible() and pets:GetText() == "+  PETS" and not slime:IsVisible()
         and not controls.routeEmpty:IsVisible(),
         "A collapsed category stays visible with matching results and hides its route rows")
@@ -1155,6 +1157,7 @@ do
     local gustjumper = controls.routes["musical-gustjumper"]
     assert(pets:IsVisible() and not gustjumper:IsVisible(), "Changing search preserves the category's collapse state")
     click(pets)
+    assert(SecretCompassSecretDB.collapsedCategories.pets == nil, "Expanding a heading clears its saved key")
     assert(pets:GetText() == "-  PETS" and gustjumper:IsVisible() and not slime:IsVisible(),
         "Expanding a category restores only the routes matching the current search")
     search:SetText("[")
@@ -1755,6 +1758,36 @@ do
     ui:Refresh()
     assert(visibilityChanges == 2 and not brokerOptions.hide, "The visibility setting shows the registered button")
     LibStub = nil
+end
+
+do
+    -- Reload the addon's runtime into new frames with SavedVariables already present.
+    local route = namespace.StandaloneSecrets()[1]
+    local collapsed = { pets = true, utility = "true", ["future-category"] = true }
+    SecretCompassSecretDB = {
+        route = route, index = 2, navigation = "external",
+        reveals = { [route.id] = "distance" },
+        collapsedCategories = collapsed,
+    }
+    assert(loadfile(addonPath .. "/SecretsCompass.lua"))("SecretsCompass", namespace)
+    local loginFrame = SecretsCompassFrame
+    loginFrame.scripts.OnEvent(loginFrame, "ADDON_LOADED", "SecretsCompass")
+    assert(SecretCompassSecretDB.collapsedCategories == collapsed and SecretCompassSecretDB.index == 2
+        and SecretCompassSecretDB.reveals[route.id] == "distance" and SecretCompassSecretDB.navigation == "external",
+        "Saved journal categories load alongside route progress, reveal level and navigation")
+
+    SlashCmdList.SECRETSCOMPASS("secrets")
+    local reopened = SecretsCompassSecrets
+    assert(reopened ~= secrets and reopened.progress:GetText():match("^Step 2"), "The reload opens the restored route")
+    click(reopened.controls.stop)
+    local pets = reopened.controls.routeHeadings["Pets"]
+    local utility = reopened.controls.routeHeadings["Gear & Utility"]
+    assert(pets:IsVisible() and pets:GetText() == "+  PETS" and not reopened.controls.routes["excitable-slime"]
+        and utility:GetText() == "-  GEAR & UTILITY" and collapsed["future-category"] == true,
+        "Restored booleans collapse known categories while invalid values remain expanded")
+    click(pets)
+    assert(collapsed.pets == nil and reopened.controls.routes["excitable-slime"]:IsVisible(),
+        "Reopening a restored category updates SavedVariables and shows its routes")
 end
 
 print("SecretsCompass mocks passed: secret-only tracking, HUD controls, categorized standalone secrets, spoiler levels, verified progress, the SecretChecklist companion, and external waypoint navigation")
