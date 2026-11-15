@@ -1943,6 +1943,26 @@ do
         end
     end
 
+    local function assertResumeTooltip(journal, expected)
+        local tooltip = GameTooltip
+        GameTooltip = {
+            SetOwner = function(self, owner) self.owner = owner end,
+            AddLine = function(self, value, _, _, _, wrap)
+                self.value, self.wrap = value, wrap
+            end,
+            Show = function(self) self.shown = true end,
+            IsOwned = function(self, owner) return self.owner == owner end,
+            Hide = function(self) self.shown = false end,
+        }
+        local button = journal.controls.continueLast
+        button.scripts.OnEnter(button)
+        assert(GameTooltip.value == expected and (expected == nil or GameTooltip.shown and GameTooltip.wrap),
+            "The wrapped tooltip contains the reveal-approved location summary")
+        button.scripts.OnLeave(button)
+        assert(not GameTooltip.shown, "Leaving Continue dismisses the location tooltip")
+        GameTooltip = tooltip
+    end
+
     local condor
     for _, choice in ipairs(namespace.StandaloneSecrets()) do
         if choice.id == "condor-hatchling" then
@@ -1960,7 +1980,7 @@ do
     click(journal.controls.stop)
     local bookmark = assert(saved.lastPaused)
     assert(journal.controls.continueLast:IsVisible(), "Pausing creates the Continue Last Secret shortcut")
-    assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3 · Test Map 1432")
+    assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3 · Test Map 1432 (77.7, 74.9)")
 
     saved.lastPaused = nil
     journal = reloadJournal(saved)
@@ -1979,7 +1999,9 @@ do
     local shortcut = journal.controls.continueLast
     assert(shortcut:IsVisible() and shortcut:GetText() == "Continue Last Secret"
         and journal.controls.routeEmpty:IsVisible(), "The restored shortcut is independent of browse filters")
-    assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3 · Test Map 1432")
+    local condorSummary = "Step 1 of 1 · Location 2 of 3 · Test Map 1432 (77.7, 74.9)"
+    assertResumeDetails(journal, condor.title, condorSummary)
+    assertResumeTooltip(journal, condorSummary)
     click(shortcut)
     assertResumeDetails(journal)
     assert(saved.route.id == condor.id and saved.index == 1 and saved.locationIndex == 2
@@ -1991,6 +2013,7 @@ do
         assert(runtimeTracker:SetReveal(reveal))
         click(journal.controls.stop)
         assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
+        assertResumeTooltip(journal)
         click(journal.controls.continueLast)
     end
 
@@ -2022,9 +2045,10 @@ do
     SecretChecklist = nil
     journal = reloadJournal(saved)
     assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2")
+    assertResumeTooltip(journal)
     C_Map.GetMapInfo = getMapInfo
     journal = reloadJournal(saved)
-    assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2 · Test Map 4")
+    assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2 · Test Map 4 (10.0, 20.0)")
     click(journal.controls.continueLast)
     assertResumeDetails(journal)
     assert(saved.route.id == imported.id and saved.route.title == condor.title and saved.index == 2

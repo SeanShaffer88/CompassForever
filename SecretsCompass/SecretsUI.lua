@@ -119,6 +119,10 @@ end
 
 namespace.SecretWaypointZone = waypointZone
 
+local function coordinatesText(waypoint)
+    return ("%.1f, %.1f"):format(waypoint.x * 100, waypoint.y * 100)
+end
+
 local function waypointText(waypoint, reveal, bearingAvailable)
     local zone = waypointZone(waypoint)
     if not zone then
@@ -127,7 +131,7 @@ local function waypointText(waypoint, reveal, bearingAvailable)
     if reveal ~= "coordinates" and reveal ~= "full" then
         return not bearingAvailable and ("Destination: " .. zone) or ""
     end
-    local coordinates = ("%.1f, %.1f"):format(waypoint.x * 100, waypoint.y * 100)
+    local coordinates = coordinatesText(waypoint)
     if reveal == "full" and waypoint.label and waypoint.label ~= "" then
         return ("%s · %s (%s)"):format(waypoint.label, zone, coordinates)
     end
@@ -386,6 +390,20 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
         self:ClearFocus()
     end)
     controls.continueLast = button(body, "Continue Last Secret", 150, 256, -74, api.continueLast)
+    local function hideContinueTooltip(self)
+        if GameTooltip and GameTooltip:IsOwned(self) then
+            GameTooltip:Hide()
+        end
+    end
+    controls.continueLast:SetScript("OnEnter", function(self)
+        if GameTooltip and self.waypointTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(self.waypointTooltip, 1, 1, 1, true)
+            GameTooltip:Show()
+        end
+    end)
+    controls.continueLast:SetScript("OnLeave", hideContinueTooltip)
+    controls.continueLast:SetScript("OnHide", hideContinueTooltip)
     controls.pausedRouteTitle = label(body, "GameFontNormalSmall", 18, -85, 228, 14)
     controls.pausedRouteTitle:SetTextColor(unpack(gold))
     if controls.pausedRouteTitle.SetWordWrap then
@@ -611,7 +629,7 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
             pausedRoute, pausedIndex, pausedLocation, pausedReveal = api.getLastPausedRoute()
         end
         local canContinue = pausedRoute ~= nil
-        local pausedStepText = ""
+        local pausedStepText, waypointTooltip = "", nil
         if canContinue then
             pausedStepText = ("Step %d of %d"):format(pausedIndex, #pausedRoute.steps)
             local waypoints = pausedRoute.steps[pausedIndex].waypoints
@@ -621,13 +639,16 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
                 and pausedLocation == math.floor(pausedLocation) then
                 pausedStepText = pausedStepText .. (" · Location %d of %d"):format(pausedLocation, waypointCount)
                 if pausedReveal == "coordinates" or pausedReveal == "full" then
-                    local zone = waypointZone(waypoints[pausedLocation], true)
+                    local waypoint = waypoints[pausedLocation]
+                    local zone = waypointZone(waypoint, true)
                     if zone then
-                        pausedStepText = pausedStepText .. " · " .. zone
+                        pausedStepText = pausedStepText .. (" · %s (%s)"):format(zone, coordinatesText(waypoint))
+                        waypointTooltip = pausedStepText
                     end
                 end
             end
         end
+        controls.continueLast.waypointTooltip = waypointTooltip
         controls.continueLast:SetShown(canContinue)
         controls.pausedRouteTitle:SetText(canContinue and pausedRoute.title or "")
         controls.pausedRouteTitle:SetShown(canContinue)
