@@ -199,6 +199,7 @@ assert(loadfile(addonPath .. "/Styles.lua"))("SecretsCompass", namespace)
 assert(loadfile(addonPath .. "/Settings.lua"))("SecretsCompass", namespace)
 assert(loadfile(addonPath .. "/Secrets.lua"))("SecretsCompass", namespace)
 assert(loadfile(addonPath .. "/SecretsUI.lua"))("SecretsCompass", namespace)
+assert(loadfile(addonPath .. "/WaypointNavigation.lua"))("SecretsCompass", namespace)
 assert(loadfile(addonPath .. "/SecretChecklistBridge.lua"))("SecretsCompass", namespace)
 assert(loadfile(addonPath .. "/SecretsCompass.lua"))("SecretsCompass", namespace)
 local frame = assert(SecretsCompassFrame)
@@ -1348,4 +1349,105 @@ local sanitized = namespace.CreateSecretTracker(invalidState, function() end)
 assert(sanitized:GetResumeStep(route) == nil and sanitized:GetResumeStep(another) == nil
     and next(invalidState.checkpoints) == nil, "Malformed saved checkpoints are filtered")
 
-print("SecretsCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, spoiler levels, verified progress, and the SecretChecklist companion")
+do
+    local owned, addCalls, removeCalls = nil, 0, 0
+    local unrelated = { title = "My own pin" }
+    local externalPoints = { [unrelated] = true }
+    local reject, duplicate, lastOptions
+    local provider = {
+        WaypointExists = function() return duplicate == true end,
+        AddWaypoint = function(_, mapID, x, y, options)
+            addCalls = addCalls + 1
+            if reject then return end
+            assert(options.persistent == false and options.silent == true and options.crazy == true
+                and options.from == "SecretsCompass", "Delegated points are temporary, active and attributed")
+            lastOptions = options
+            owned = { mapID = mapID, x = x, y = y }
+            externalPoints[owned] = true
+            return owned
+        end,
+        IsValidWaypoint = function(_, uid) return externalPoints[uid] == true end,
+        RemoveWaypoint = function(_, uid)
+            assert(uid == owned, "Cleanup only removes SecretsCompass's own waypoint")
+            removeCalls = removeCalls + 1
+            externalPoints[uid] = nil
+            owned = nil
+        end,
+    }
+    TomTom = nil
+    click(cozyButton)
+    click(secrets.controls.revealClue)
+    click(secrets.controls.navigation)
+    assert(SecretCompassSecretDB.navigation == "external" and frame:IsVisible(),
+        "External arrow preference saves and falls back to the HUD")
+    click(secrets.controls.revealCoordinates)
+    assert(frame:IsVisible(), "HUD stays active when the external addon is missing")
+    TomTom = provider
+    local queuedLoad
+    local immediate = C_Timer.After
+    C_Timer.After = function(_, callback) queuedLoad = callback end
+    fireAddonEvent("ADDON_LOADED", "WaypointTracker")
+    C_Timer.After = immediate
+    assert(queuedLoad and not owned and addCalls == 0,
+        "Provider handoff waits for other AddOnLoaded listeners to initialize")
+    queuedLoad()
+    local cozyStep = cozy.steps[SecretCompassSecretDB.index].waypoints[1]
+    assert(owned and owned.mapID == cozyStep.mapID and owned.x == cozyStep.x and owned.y == cozyStep.y
+        and not frame:IsVisible() and ForeverCompassDB.enabled,
+        "External navigation hides the HUD without changing the saved HUD preference")
+    assert(not lastOptions.callbacks, "TomTom keeps its native waypoint callbacks")
+    advance()
+    click(secrets.controls.revealFull)
+    assert(addCalls == 1 and removeCalls == 0, "Same-point refreshes keep the original waypoint")
+    click(secrets.controls.revealDistance)
+    assert(not owned and frame:IsVisible() and removeCalls == 1 and addCalls == 1,
+        "Distance mode revokes the external point and restores HUD guidance")
+    duplicate = true
+    click(secrets.controls.revealCoordinates)
+    assert(not owned and frame:IsVisible() and addCalls == 1 and removeCalls == 1,
+        "An existing identical waypoint is never claimed")
+    duplicate = false
+    reject = true
+    click(secrets.controls.revealDistance)
+    click(secrets.controls.revealCoordinates)
+    assert(not owned and frame:IsVisible() and addCalls == 2, "A declined waypoint falls back to the HUD")
+    reject = false
+    fireAddonEvent("PLAYER_ENTERING_WORLD")
+    assert(owned and not frame:IsVisible() and addCalls == 3,
+        "Entering the world retries a waypoint rejected before the provider was ready")
+
+    provider.isWaypointTrackerBridge = true
+    SecretChecklist.entries = {foreignEntry}
+    foreignLink.currentURL = foreignEntry.guideURL
+    click(trackSecret)
+    assert(owned and owned.mapID == 1 and owned.x == 0.30 and not frame:IsVisible(),
+        "An imported SecretChecklist route uses the same external arrow preference")
+    click(secrets.controls.next)
+    assert(owned and owned.mapID == 4 and removeCalls == 3, "Next replaces the previous owned point")
+    click(secrets.controls.location)
+    assert(owned and owned.mapID == 1 and owned.x == 0.25 and removeCalls == 4,
+        "Next Location hands the selected alternative to the external arrow")
+    local later
+    C_Timer.After = function(_, callback) later = callback end
+    lastOptions.callbacks.arrived("arrived", owned)
+    C_Timer.After = immediate
+    externalPoints[owned] = nil
+    owned = nil
+    assert(later, "Arrival is revalidated after Waypoint Tracker finishes auto-clear")
+    local beforeArrivalAdd = addCalls
+    later()
+    assert(frame:IsVisible() and SecretCompassSecretDB.index == 2 and addCalls == beforeArrivalAdd,
+        "An auto-cleared waypoint returns guidance to the HUD without re-adding or advancing")
+    click(secrets.controls.location)
+    assert(owned and owned.mapID == 4, "An intentional new location resumes external guidance")
+    click(secrets.controls.next)
+    assert(not owned and frame:IsVisible() and removeCalls == 5, "Text-only steps clear the external point")
+    click(secrets.controls.next)
+    assert(SecretCompassSecretDB.route == nil and waypoint == savedPin and externalPoints[unrelated],
+        "Finish preserves the player's world map pin and other external waypoints")
+    click(secrets.controls.navigation)
+    assert(SecretCompassSecretDB.navigation == "hud", "The player can switch back to the compass")
+    TomTom = nil
+end
+
+print("SecretsCompass mocks passed: tracking, crowded labels, HUD controls, standalone secrets, spoiler levels, verified progress, the SecretChecklist companion, and external waypoint navigation")

@@ -3,7 +3,18 @@ local addonName, namespace = ...
 local panelName = "SecretsCompassSecrets"
 local journalTitle = "SecretsCompass Journal"
 local portraitPath = "Interface\\AddOns\\" .. addonName .. "\\Media\\MinimapCompass.tga"
-local journalHeight = 427
+local journalHeight = 471
+local navigationMessages = {
+    delegated = "Waypoint sent to the external arrow.",
+    unavailable = "External arrow unavailable. Using your HUD preference.",
+    reveal = "Choose Coordinates or Full to use the external arrow.",
+    location = "This step has no waypoint for the external arrow.",
+    collision = "A matching waypoint already exists. Using your HUD preference.",
+    failed = "The external arrow could not take this waypoint.",
+    cleanupFailed = "The external arrow could not clear the previous waypoint.",
+    cleared = "The external waypoint was cleared. Switch navigation to send it again.",
+    test = "External navigation paused during the overflow test.",
+}
 
 local function label(parent, font, x, y, width, height)
     local text = parent:CreateFontString(nil, "OVERLAY", font)
@@ -230,12 +241,12 @@ local function makePanel(api)
 
     local mapInput = CreateFrame("EditBox", nil, body, "InputBoxTemplate")
     mapInput:SetSize(172, 24)
-    mapInput:SetPoint("BOTTOMLEFT", 150, 10)
+    mapInput:SetPoint("BOTTOMLEFT", 150, 54)
     mapInput:SetAutoFocus(false)
     controls.mapCommandInput = mapInput
     local copyHint = label(body, "GameFontHighlightSmall", 327, 0, 80, 15)
     copyHint:ClearAllPoints()
-    copyHint:SetPoint("BOTTOMLEFT", 327, 13)
+    copyHint:SetPoint("BOTTOMLEFT", 327, 57)
     copyHint:SetText("Ctrl+C to copy")
 
     local selectedCommand
@@ -267,7 +278,15 @@ local function makePanel(api)
         end
     end)
     controls.mapCommand:ClearAllPoints()
-    controls.mapCommand:SetPoint("BOTTOMLEFT", 18, 10)
+    controls.mapCommand:SetPoint("BOTTOMLEFT", 18, 54)
+
+    controls.navigation = button(body, "", 176, 18, 0, api.switchNavigation)
+    controls.navigation:ClearAllPoints()
+    controls.navigation:SetPoint("BOTTOMLEFT", 18, 14)
+    panel.navigationStatus = label(body, "GameFontHighlightSmall", 203, 0, 203, 31)
+    panel.navigationStatus:ClearAllPoints()
+    panel.navigationStatus:SetPoint("BOTTOMLEFT", 203, 10)
+    panel.navigationStatus:SetTextColor(0.74, 0.77, 0.76)
     panel.resetMapCommand()
 
     local function onHide()
@@ -422,6 +441,11 @@ function namespace.CreateSecretsUI(api)
 
     function ui:RefreshStatus()
         if panel then
+            local mode, navigationStatus = api.navigation()
+            local external = mode == "external"
+            panel.controls.navigation:SetText(external and "Navigation: External Arrow" or "Navigation: Compass HUD")
+            panel.navigationStatus:SetText(navigationMessages[navigationStatus]
+                or (external and "Track a route to send waypoints to the external arrow." or "Follow secret steps on the compass."))
             local step, waypoint = api.getCurrentStep()
             local hidden = step ~= nil and api.hudHidden()
             local bearingAvailable = api.hasBearing()
@@ -438,6 +462,7 @@ function namespace.CreateSecretsUI(api)
     end
 
     function ui:Open()
+        api.refreshNavigation()
         panel = panel or makePanel(api)
         panel:Show()
         self:Refresh()
