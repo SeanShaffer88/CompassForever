@@ -1918,9 +1918,12 @@ do
     local function assertResumeDetails(journal, title, step)
         local controls = journal.controls
         local visible = title ~= nil
-        assert(controls.pausedRouteTitle:IsVisible() == visible and controls.pausedStep:IsVisible() == visible
-            and controls.pausedRouteTitle:GetText() == (title or "") and controls.pausedStep:GetText() == (step or ""),
-            "Resume details show only the paused route title and step ordinal")
+        local hasSetWaypoint = controls.setWaypoint:IsVisible()
+        local titleInSummary = visible and not hasSetWaypoint
+        assert(controls.pausedRouteTitle:IsVisible() == titleInSummary and controls.pausedStep:IsVisible() == visible
+            and controls.pausedRouteTitle:GetText() == (titleInSummary and title or "")
+            and controls.pausedStep:GetText() == (step or ""),
+            "Resume details use the appropriate route title and saved step")
         local _, titleX, titleY = journal.routeTitle:GetPoint()
         local _, progressX, progressY = journal.progress:GetPoint()
         local _, nameX, nameY = controls.pausedRouteTitle:GetPoint()
@@ -1928,11 +1931,21 @@ do
         local _, _, hintY = journal.stepTitle:GetPoint()
         local _, buttonX, buttonY = controls.continueLast:GetPoint()
         if visible then
-            assert(nameY - controls.pausedRouteTitle:GetHeight() >= stepY
-                and stepY - controls.pausedStep:GetHeight() >= hintY
-                and nameX + controls.pausedRouteTitle:GetWidth() < buttonX
+            assert(stepY - controls.pausedStep:GetHeight() >= hintY
                 and buttonY - controls.continueLast:GetHeight() >= stepY,
                 "Resume details clear the shortcuts and companion hint")
+            if hasSetWaypoint then
+                local _, copyX = controls.copyWaypoint:GetPoint()
+                local _, setX = controls.setWaypoint:GetPoint()
+                assert(journal.routeTitle:GetText() == title
+                    and titleY - journal.routeTitle:GetHeight() >= buttonY
+                    and controls.copyWaypoint:IsVisible() and copyX + controls.copyWaypoint:GetWidth() < setX,
+                    "Three actions fit below the saved route title")
+            else
+                assert(nameY - controls.pausedRouteTitle:GetHeight() >= stepY
+                    and nameX + controls.pausedRouteTitle:GetWidth() < buttonX,
+                    "The saved route name fits beside Continue")
+            end
             if controls.copyWaypoint:IsVisible() then
                 local _, copyX = controls.copyWaypoint:GetPoint()
                 assert(titleX + journal.routeTitle:GetWidth() < progressX
@@ -2004,6 +2017,47 @@ do
     local bookmark = assert(saved.lastPaused)
     assert(journal.controls.continueLast:IsVisible(), "Pausing creates the Continue Last Secret shortcut")
     assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3 · Test Map 1432 (77.7, 74.9)")
+    assert(journal.controls.copyWaypoint:IsVisible() and not journal.controls.setWaypoint:IsVisible(),
+        "When native map APIs are unavailable, Copy Waypoint is still available")
+
+    local baseMapPermission, baseSetWaypoint, baseMapPoint = C_Map.CanSetUserWaypointOnMap, C_Map.SetUserWaypoint, UiMapPoint
+    local previousPlayerPin = waypoint
+    local allowed, setterResult, setterThrows = true, true, false
+    local permissionCalls, pointCalls, setterCalls = 0, 0, 0
+    C_Map.CanSetUserWaypointOnMap = function(mapID)
+        permissionCalls = permissionCalls + 1
+        assert(mapID == 1432 or mapID == 4)
+        return allowed
+    end
+    UiMapPoint = { CreateFromCoordinates = function(mapID, x, y)
+        pointCalls = pointCalls + 1
+        return { uiMapID = mapID, position = CreateVector2D(x, y) }
+    end }
+    C_Map.SetUserWaypoint = function(point)
+        setterCalls = setterCalls + 1
+        if setterThrows then
+            error("Mock setter failure")
+        end
+        if setterResult == true then
+            waypoint = point
+        end
+        return setterResult
+    end
+    local function assertSetWaypoint(journal, expectedMap, x, y)
+        local button = journal.controls.setWaypoint
+        local savedBookmark, savedNavigation = saved.lastPaused, saved.navigation
+        local beforePermission, beforeCreate, beforeSet = permissionCalls, pointCalls, setterCalls
+        assert(button:IsVisible() and button:GetText() == "Set Waypoint")
+        click(button)
+        assert(permissionCalls == beforePermission + 1 and pointCalls == beforeCreate + 1
+            and setterCalls == beforeSet + 1 and waypoint.uiMapID == expectedMap
+            and math.abs(waypoint.position.x - x) < 0.000001 and math.abs(waypoint.position.y - y) < 0.000001,
+            "Clicking Set Waypoint places the exact saved normalized point")
+        assert(journal.stepTitle:IsVisible() and journal.stepTitle:GetText() == "Waypoint set on the World Map."
+            and not journal.controls.mapCommandInput:IsVisible() and not journal.controls.mapCommandInput.focused
+            and saved.route == nil and saved.lastPaused == savedBookmark and saved.navigation == savedNavigation,
+            "Set Waypoint closes Copy and preserves the paused route and navigation preference")
+    end
 
     saved.lastPaused = nil
     journal = reloadJournal(saved)
@@ -2026,6 +2080,32 @@ do
     assertResumeDetails(journal, condor.title, condorSummary)
     assertResumeTooltip(journal, condorSummary)
     local copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
+    assert(permissionCalls == 0 and pointCalls == 0 and setterCalls == 0 and waypoint == previousPlayerPin,
+        "Opening, filtering and copying do not touch the player map pin")
+    assertSetWaypoint(journal, 1432, 0.777, 0.749)
+    local savedPin = waypoint
+    allowed = false
+    click(journal.controls.setWaypoint)
+    assert(journal.stepTitle:GetText() == "This map does not support World Map waypoints."
+        and pointCalls == 1 and setterCalls == 1 and waypoint == savedPin,
+        "Unsupported maps do not construct or place a waypoint")
+    allowed = true
+    for _, rejected in ipairs({ false, secret }) do
+        setterResult = rejected
+        click(journal.controls.setWaypoint)
+        assert(journal.stepTitle:GetText() == "Could not set the World Map waypoint." and waypoint == savedPin)
+    end
+    setterResult = nil
+    click(journal.controls.setWaypoint)
+    assert(journal.stepTitle:GetText() == "Could not set the World Map waypoint." and waypoint == savedPin,
+        "A nil native return does not claim success")
+    setterThrows = true
+    click(journal.controls.setWaypoint)
+    assert(journal.stepTitle:GetText() == "Could not set the World Map waypoint." and waypoint == savedPin,
+        "A native error does not escape or claim success")
+    setterThrows, setterResult = false, true
+
+    copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
     journal.controls.routeSearch:SetText("nothing matches")
     assert(copyInput:IsVisible() and copyInput:GetText() == "/mappin 1432 77.70 74.90",
         "Refreshing the same built-in waypoint keeps its copy field")
@@ -2034,6 +2114,11 @@ do
         and journal.stepTitle:IsVisible(), "Escape closes Copy Waypoint and restores the journal hint")
     copyInput = assertCopyWaypoint(journal, "/mappin 1432 77.70 74.90")
     saved.reveals[condor.id] = "distance"
+    local oldPermissionCalls = permissionCalls
+    click(journal.controls.setWaypoint)
+    assert(journal.stepTitle:GetText() == "World Map waypoint unavailable."
+        and permissionCalls == oldPermissionCalls and waypoint == savedPin,
+        "A stale Set action rechecks the reveal level before using the map API")
     journal.controls.routeSearch:SetText("")
     assert(not copyInput:IsVisible() and not copyInput.focused and copyInput:GetText() == ""
         and not journal.controls.copyWaypoint:IsVisible() and journal.stepTitle:IsVisible(),
@@ -2062,7 +2147,8 @@ do
         click(journal.controls.stop)
         assertResumeDetails(journal, condor.title, "Step 1 of 1 · Location 2 of 3")
         assertResumeTooltip(journal)
-        assert(not journal.controls.copyWaypoint:IsVisible(), "Low reveal levels hide Copy Waypoint")
+        assert(not journal.controls.copyWaypoint:IsVisible() and not journal.controls.setWaypoint:IsVisible(),
+            "Low reveal levels hide both waypoint actions")
         click(journal.controls.continueLast)
     end
 
@@ -2101,7 +2187,7 @@ do
     assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2")
     assertResumeTooltip(journal)
     copyInput = assertCopyWaypoint(journal, "/mappin 4 10.00 20.00")
-    copyInput.scripts.OnEscapePressed(copyInput)
+    assertSetWaypoint(journal, 4, 0.10, 0.20)
     C_Map.GetMapInfo = getMapInfo
     journal = reloadJournal(saved)
     assertResumeDetails(journal, imported.title, "Step 2 of 2 · Location 2 of 2 · Test Map 4 (10.0, 20.0)")
@@ -2117,6 +2203,8 @@ do
     assert(saved.route == nil and saved.lastPaused == nil and not journal.controls.continueLast:IsVisible(),
         "Finishing the continued route clears the saved shortcut")
     assertResumeDetails(journal)
+    C_Map.CanSetUserWaypointOnMap, C_Map.SetUserWaypoint, UiMapPoint = baseMapPermission, baseSetWaypoint, baseMapPoint
+    waypoint = previousPlayerPin
 end
 
 print("SecretsCompass mocks passed: secret-only tracking, HUD controls, categorized standalone secrets, spoiler levels, verified progress, the SecretChecklist companion, and external waypoint navigation")

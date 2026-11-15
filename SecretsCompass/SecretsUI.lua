@@ -153,10 +153,46 @@ local function mapCommandText(waypoint)
         math.floor(x / 100), x % 100, math.floor(y / 100), y % 100)
 end
 
-local function savedMapCommand(route, index, location, reveal)
+local function savedWaypoint(route, index, location, reveal)
     local step = route and route.steps[index]
     local waypoint = step and step.waypoints[location]
     if canShowMapCommand(waypoint, reveal) then
+        return waypoint
+    end
+end
+
+local function supportsWorldMapWaypoint()
+    return C_Map ~= nil and UiMapPoint ~= nil
+        and type(C_Map.CanSetUserWaypointOnMap) == "function"
+        and type(UiMapPoint.CreateFromCoordinates) == "function"
+        and type(C_Map.SetUserWaypoint) == "function"
+end
+
+local function setWorldMapWaypoint(waypoint)
+    if not waypoint or not supportsWorldMapWaypoint() then
+        return "World Map waypoint unavailable."
+    end
+    local checked, allowed = pcall(C_Map.CanSetUserWaypointOnMap, waypoint.mapID)
+    if not checked or (issecretvalue and issecretvalue(allowed)) then
+        return "Could not set the World Map waypoint."
+    end
+    if allowed ~= true then
+        return "This map does not support World Map waypoints."
+    end
+    local created, point = pcall(UiMapPoint.CreateFromCoordinates, waypoint.mapID, waypoint.x, waypoint.y)
+    if not created or (issecretvalue and issecretvalue(point)) or type(point) ~= "table" then
+        return "Could not set the World Map waypoint."
+    end
+    local called, placed = pcall(C_Map.SetUserWaypoint, point)
+    if called and not (issecretvalue and issecretvalue(placed)) and placed == true then
+        return "Waypoint set on the World Map."
+    end
+    return "Could not set the World Map waypoint."
+end
+
+local function savedMapCommand(route, index, location, reveal)
+    local waypoint = savedWaypoint(route, index, location, reveal)
+    if waypoint then
         return {
             id = route.id, sourceURL = route.sourceURL, index = index, location = location,
             reveal = reveal, command = mapCommandText(waypoint),
@@ -560,13 +596,22 @@ local function makePanel(api, changePage, changeFilter, setAllCategories, cycleS
     end)
     controls.mapCommand:ClearAllPoints()
     controls.mapCommand:SetPoint("BOTTOMLEFT", 18, 54)
-    controls.copyWaypoint = button(body, "Copy Waypoint", 98, 308, -74, function(self)
+    controls.copyWaypoint, controls.copyWaypointCaption = button(body, "Copy Waypoint", 98, 308, -74, function(self)
         local savedCommand = savedMapCommand(api.getLastPausedRoute())
         if panel:IsShown() and self:IsShown() and savedCommand then
             menu:Hide()
             showMapCommand(savedCommand.command, savedCommand)
         elseif panel.selectedSavedMapCommand then
             panel.resetMapCommand()
+        end
+    end)
+
+    controls.setWaypoint = button(body, "Set Waypoint", 130, 276, -74, function(self)
+        if panel:IsShown() and self:IsShown() then
+            local waypoint = savedWaypoint(api.getLastPausedRoute())
+            panel.resetMapCommand()
+            menu:Hide()
+            panel.stepTitle:SetText(setWorldMapWaypoint(waypoint))
         end
     end)
 
@@ -676,6 +721,7 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
         local canContinue = pausedRoute ~= nil
         local savedCommand = savedMapCommand(pausedRoute, pausedIndex, pausedLocation, pausedReveal)
         local canCopyWaypoint = savedCommand ~= nil
+        local canSetWaypoint = canCopyWaypoint and supportsWorldMapWaypoint()
         local pausedStepText, waypointTooltip = "", nil
         if canContinue then
             pausedStepText = ("Step %d of %d"):format(pausedIndex, #pausedRoute.steps)
@@ -697,15 +743,25 @@ function namespace.CreateSecretsUI(api, collapsedCategories)
         end
         controls.continueLast.waypointTooltip = waypointTooltip
         controls.continueLast:ClearAllPoints()
-        controls.continueLast:SetPoint("TOPLEFT", canCopyWaypoint and 170 or 256, -74)
+        controls.continueLast:SetPoint("TOPLEFT", canSetWaypoint and 18 or (canCopyWaypoint and 170 or 256), -74)
         local continueWidth = canCopyWaypoint and 132 or 150
         controls.continueLast:SetWidth(continueWidth)
         controls.continueLastCaption:SetWidth(continueWidth - 4)
         controls.continueLast:SetShown(canContinue)
+        local copyWidth = canSetWaypoint and 110 or 98
+        controls.copyWaypoint:ClearAllPoints()
+        controls.copyWaypoint:SetPoint("TOPLEFT", canSetWaypoint and 158 or 308, -74)
+        controls.copyWaypoint:SetWidth(copyWidth)
+        controls.copyWaypointCaption:SetWidth(copyWidth - 4)
         controls.copyWaypoint:SetShown(canCopyWaypoint)
+        controls.setWaypoint:SetShown(canSetWaypoint)
+        local showPausedTitle = canContinue and not canSetWaypoint
         controls.pausedRouteTitle:SetWidth(canCopyWaypoint and 144 or 228)
-        controls.pausedRouteTitle:SetText(canContinue and pausedRoute.title or "")
-        controls.pausedRouteTitle:SetShown(canContinue)
+        controls.pausedRouteTitle:SetText(showPausedTitle and pausedRoute.title or "")
+        controls.pausedRouteTitle:SetShown(showPausedTitle)
+        if canSetWaypoint then
+            panel.routeTitle:SetText(pausedRoute.title)
+        end
         controls.pausedStep:SetText(pausedStepText)
         controls.pausedStep:SetShown(canContinue)
         panel.routeTitle:SetSize(canCopyWaypoint and 170 or 390, canContinue and 18 or 34)
