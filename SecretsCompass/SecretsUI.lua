@@ -5,6 +5,8 @@ local journalTitle = "SecretsCompass Journal"
 local portraitPath = "Interface\\AddOns\\" .. addonName .. "\\Media\\MinimapCompass.tga"
 local journalHeight = 471
 local routeRowHeight, baseRouteRows = 30, 8
+local routePageHeight = journalHeight - (baseRouteRows - 1) * routeRowHeight
+local routePageInset = 10
 local navigationMessages = {
     delegated = "Waypoint sent to the external arrow.",
     unavailable = "External arrow unavailable. Using your HUD preference.",
@@ -84,7 +86,7 @@ local function mapCommandText(waypoint)
         math.floor(x / 100), x % 100, math.floor(y / 100), y % 100)
 end
 
-local function makePanel(api)
+local function makePanel(api, changePage)
     local panel = CreateFrame("Frame", panelName, UIParent, "PortraitFrameTemplate")
     panel:SetSize(424, journalHeight)
     panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 34, -126)
@@ -290,6 +292,18 @@ local function makePanel(api)
     panel.navigationStatus:SetTextColor(0.74, 0.77, 0.76)
     panel.resetMapCommand()
 
+    controls.routePagePrevious = button(body, "Previous Page", 110, 18, 0, function() changePage(-1) end)
+    controls.routePagePrevious:ClearAllPoints()
+    controls.routePagePrevious:SetPoint("BOTTOMLEFT", 18, 54)
+    controls.routePageNext = button(body, "Next Page", 110, 296, 0, function() changePage(1) end)
+    controls.routePageNext:ClearAllPoints()
+    controls.routePageNext:SetPoint("BOTTOMLEFT", 296, 54)
+    controls.routePageRange = label(body, "GameFontHighlight", 133, 0, 158, 24)
+    controls.routePageRange:ClearAllPoints()
+    controls.routePageRange:SetPoint("BOTTOMLEFT", 133, 54)
+    controls.routePageRange:SetJustifyH("CENTER")
+    controls.routePageRange:SetJustifyV("MIDDLE")
+
     local function onHide()
         stopMoving()
         panel.resetJump()
@@ -319,6 +333,7 @@ end
 function namespace.CreateSecretsUI(api)
     local ui = {}
     local panel, finished
+    local page = 1
 
     function ui:Refresh()
         if not panel then
@@ -365,14 +380,37 @@ function namespace.CreateSecretsUI(api)
             row:Hide()
         end
         local routes = not tracking and api.getRoutes()
+        local height, paging, pageCount = journalHeight, false, 1
         if routes then
             if #routes == 0 then
                 panel.note:SetText("Built-in routes need your character's Alliance or Horde faction.")
             end
+            height = journalHeight + math.max(0, #routes - baseRouteRows) * routeRowHeight
+            local pageSize = #routes
+            local screenHeight = UIParent:GetHeight()
+            local availableHeight = screenHeight - routePageInset
+            if #routes > 1 and screenHeight > 0 and height > availableHeight then
+                pageSize = math.max(1, math.floor((availableHeight - routePageHeight) / routeRowHeight))
+                pageCount = math.ceil(#routes / pageSize)
+                height = routePageHeight + pageSize * routeRowHeight
+                paging = true
+            end
+            page = math.min(page, pageCount)
+            local first = (page - 1) * pageSize + 1
+            local last = math.min(page * pageSize, #routes)
+            if paging then
+                controls.routePageRange:SetText(("%d–%d of %d"):format(first, last, #routes))
+            end
             local finishedCount = 0
-            for index, choice in ipairs(routes) do
+            for _, choice in ipairs(routes) do
+                if api.hasFinished(choice) then
+                    finishedCount = finishedCount + 1
+                end
+            end
+            for index = first, last do
+                local choice = routes[index]
                 local id = choice.id
-                local position = -157 - (index - 1) * routeRowHeight
+                local position = -157 - (index - first) * routeRowHeight
                 local row = controls.routes[id]
                 if not row then
                     row = button(panel.body, "", 388, 18, position, function() api.start(id) end)
@@ -382,14 +420,10 @@ function namespace.CreateSecretsUI(api)
                     row:SetPoint("TOPLEFT", 18, position)
                 end
                 local resumeStep = api.getResumeStep(choice)
-                local hasFinished = api.hasFinished(choice)
-                if hasFinished then
-                    finishedCount = finishedCount + 1
-                end
                 if resumeStep then
                     row:SetText(("Resume %s (Step %d)"):format(choice.title, resumeStep))
                 else
-                    row:SetText((hasFinished and "Replay " or "Track ") .. choice.title)
+                    row:SetText((api.hasFinished(choice) and "Replay " or "Track ") .. choice.title)
                 end
                 row:Show()
             end
@@ -397,6 +431,11 @@ function namespace.CreateSecretsUI(api)
                 panel.progress:SetText(("%d of %d Built-In Routes Finished"):format(finishedCount, #routes))
             end
         end
+        controls.routePagePrevious:SetShown(paging)
+        controls.routePageNext:SetShown(paging)
+        controls.routePageRange:SetShown(paging)
+        controls.routePagePrevious:SetEnabled(paging and page > 1)
+        controls.routePageNext:SetEnabled(paging and page < pageCount)
         panel.footerRule:SetShown(tracking)
         controls.previous:SetShown(tracking)
         controls.next:SetShown(tracking)
@@ -417,8 +456,7 @@ function namespace.CreateSecretsUI(api)
         end
         panel.mapCommandRoute, panel.mapCommandIndex = route, index
         panel.mapCommandWaypoint, panel.mapCommandReveal = waypoint, reveal
-        local extraRouteHeight = routes and math.max(0, #routes - baseRouteRows) * routeRowHeight or 0
-        panel:SetHeight(journalHeight + extraRouteHeight + (jumpRoute and 34 or 0) + (showMapCommand and 34 or 0))
+        panel:SetHeight(height + (jumpRoute and 34 or 0) + (showMapCommand and 34 or 0))
         controls.mapCommand:SetShown(showMapCommand)
         controls.jumpLabel:SetShown(jumpRoute ~= nil)
         controls.jumpInput:SetShown(jumpRoute ~= nil)
@@ -467,7 +505,19 @@ function namespace.CreateSecretsUI(api)
 
     function ui:Open()
         api.refreshNavigation()
-        panel = panel or makePanel(api)
+        if not panel then
+            panel = makePanel(api, function(delta)
+                page = math.max(1, page + delta)
+                self:Refresh()
+            end)
+            panel:RegisterEvent("DISPLAY_SIZE_CHANGED")
+            panel:RegisterEvent("UI_SCALE_CHANGED")
+            panel:SetScript("OnEvent", function()
+                if panel:IsShown() and not api.getRoute() then
+                    self:Refresh()
+                end
+            end)
+        end
         panel:Show()
         self:Refresh()
     end

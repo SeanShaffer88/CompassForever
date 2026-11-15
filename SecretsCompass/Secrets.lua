@@ -1212,6 +1212,70 @@ local function fizsprocketsNotesRoute()
     })
 end
 
+local function condorHatchlingRoute()
+    return ns.NormalizeSecretRoute({
+        id = "condor-hatchling",
+        title = "Condor Hatchling",
+        sourceURL = "https://www.wowhead.com/forever/item=282637/shaking-egg#comments",
+        steps = {
+            {
+                title = "Find Lord Condar",
+                note = "Either faction can hunt Lord Condar, a roaming level 15–16 rare in southeastern Loch Modan. "
+                    .. "Use Next Location to check the search areas near Ironband's Excavation Site. "
+                    .. "Defeat Lord Condar and use the Shaking Egg if it drops to learn the Condor Hatchling.",
+                clue = "A rare condor flies over the southeast of Loch Modan.",
+                waypoints = {
+                    { mapID = 1432, x = 0.746, y = 0.708, label = "Lord Condar search area" },
+                    { mapID = 1432, x = 0.777, y = 0.749, label = "Southeast Lord Condar search area" },
+                    { mapID = 1432, x = 0.747, y = 0.669, label = "Northern Lord Condar search area" },
+                },
+            },
+        },
+    })
+end
+
+local function tallstriderHatchlingRoute()
+    return ns.NormalizeSecretRoute({
+        id = "tallstrider-hatchling",
+        title = "Tallstrider Hatchling",
+        sourceURL = "https://www.wowhead.com/forever/npc=274334/tallstrider-hatchling#comments",
+        steps = {
+            {
+                title = "Find Strider Clutchmother",
+                note = "Either faction can hunt Strider Clutchmother, a level 20 rare in southern Darkshore "
+                    .. "near the Ashenvale border. Check both reported search spots with Next Location. "
+                    .. "Defeat her and use the bind-on-pickup Tallstrider Hatchling item if it drops.",
+                clue = "Search southern Darkshore for a tallstrider near the Ashenvale border.",
+                waypoints = {
+                    { mapID = 1439, x = 0.348, y = 0.873, label = "Strider Clutchmother search area" },
+                    { mapID = 1439, x = 0.350, y = 0.880, label = "Reported Strider Clutchmother sighting" },
+                },
+            },
+        },
+    })
+end
+
+local function babyCrocoliskRoute()
+    return ns.NormalizeSecretRoute({
+        id = "baby-crocolisk",
+        title = "Baby Crocolisk",
+        sourceURL = "https://www.wowhead.com/forever/item=282047/baby-crocolisk#comments",
+        steps = {
+            {
+                title = "Find the Sewer Beast",
+                note = "Alliance players can hunt the Sewer Beast, a roaming level 50 rare in the Stormwind canals. "
+                    .. "Use Next Location to check both canal search areas. Bring a group to help defeat it and earn loot credit. "
+                    .. "Use the Baby Crocolisk item if it drops to learn the companion.",
+                clue = "Search the Stormwind canals for the rare beast that patrols them.",
+                waypoints = {
+                    { mapID = 1453, x = 0.712, y = 0.488, label = "Northern Sewer Beast search area" },
+                    { mapID = 1453, x = 0.711, y = 0.680, label = "Southern Sewer Beast search area" },
+                },
+            },
+        },
+    })
+end
+
 function ns.StandaloneSecrets()
     -- Route facts cross-checked against the Forever guides from Method and Wowhead.
     local source = "https://www.wowhead.com/forever/guide/cozy-sleeping-bag-locations-rewards"
@@ -1296,6 +1360,11 @@ function ns.StandaloneSecrets()
     else
         routes[#routes + 1] = orcishTradeskillSignpostRoute()
         routes[#routes + 1] = fizsprocketsNotesRoute()
+    end
+    routes[#routes + 1] = condorHatchlingRoute()
+    routes[#routes + 1] = tallstriderHatchlingRoute()
+    if alliance then
+        routes[#routes + 1] = babyCrocoliskRoute()
     end
     return routes
 end

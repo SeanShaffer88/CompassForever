@@ -948,6 +948,7 @@ C_QuestLog.IsQuestFlaggedCompleted = function(id) return completionFlags[id] end
 C_QuestLog.IsOnQuest = function(id) return acceptedQuests[id] end
 fireAddonEvent("PLAYER_LOGIN")
 assert(not SecretsCompassSecretChecklistTrackButton, "Standalone mode has no foreign-addon button")
+UIParent:SetHeight(1080)
 slash("secrets")
 local secrets = assert(SecretsCompassSecrets)
 assert(secrets.TitleContainer.TitleText:GetText() == "SecretsCompass Journal"
@@ -984,6 +985,9 @@ do
         ["fizsprockets-notes"] = {
             {1412, 610, 470}, {1412, 586, 473}, {1412, 590, 464}, {1412, 617, 473}, {1412, 548, 643},
         },
+        ["condor-hatchling"] = { {1432, 746, 708}, {1432, 777, 749}, {1432, 747, 669} },
+        ["tallstrider-hatchling"] = { {1439, 348, 873}, {1439, 350, 880} },
+        ["baby-crocolisk"] = { {1453, 712, 488}, {1453, 711, 680} },
         ["manual-scavenger-hunt"] = {
             {1417, 226.9, 241.7}, {1424, 876.1, 479.1}, {1458, 228.6, 361.9},
             {2548, 265.6, 455.8}, {2548, 267.2, 477.4}, {1419, 451.9, 164.7},
@@ -996,10 +1000,12 @@ do
         slash("secrets")
         local choices = namespace.StandaloneSecrets()
         local isAlliance = side == "Alliance"
-        local expectedCount = 16
+        local expectedCount = isAlliance and 19 or 18
         assert(#choices == expectedCount
             and secrets.progress:GetText() == ("0 of %d Built-In Routes Finished"):format(expectedCount),
             "Faction-specific additions update the journal count")
+        assert(choices[17].id == "condor-hatchling" and choices[18].id == "tallstrider-hatchling"
+            and (not isAlliance or choices[19].id == "baby-crocolisk"), "Pet routes follow all existing guides")
         assert(choices[11].id == "blessing-of-kalimdor" and choices[12].id == "travelers-symbols",
             "Both factions keep their existing Barrens and Blackrock routes")
         local symbols = choices[12]
@@ -1048,7 +1054,8 @@ do
         end
         local lastRow = secrets.controls.routes[choices[expectedCount].id]
         local _, _, rowY = lastRow:GetPoint()
-        assert(secrets:GetHeight() == 711
+        assert(secrets:GetHeight() == (isAlliance and 801 or 771)
+            and not secrets.controls.routePageNext:IsVisible()
             and 26 - rowY + lastRow:GetHeight() <= secrets:GetHeight() - 14 - secrets.controls.navigation:GetHeight(),
             "The last route row fits above navigation")
         for i = 3, #choices do
@@ -1296,6 +1303,78 @@ do
         and not SecretCompassSecretDB.finishedRoutes["dawn-waker-eluviana"],
         "The Next binding cannot finish the ongoing route")
     click(secrets.controls.stop)
+end
+do
+    local controls = secrets.controls
+    local previousPage, nextPage, range = controls.routePagePrevious, controls.routePageNext, controls.routePageRange
+    local choices = namespace.StandaloneSecrets()
+    local lateRoute = choices[18]
+    local function assertPage(first, last, height)
+        assert(secrets:GetHeight() == height and previousPage:IsVisible() and nextPage:IsVisible() and range:IsVisible(),
+            "Only an overflowing catalog shows the pager")
+        assert(range:GetText() == ("%d–%d of %d"):format(first, last, #choices),
+            "The pager shows the displayed route range")
+        assert(previousPage.enabled == (first > 1) and nextPage.enabled == (last < #choices),
+            "Page controls stop at the first and last pages")
+        for index, route in ipairs(choices) do
+            assert(controls.routes[route.id]:IsVisible() == (index >= first and index <= last),
+                "Only rows on the current page are visible")
+        end
+        local lastRow = controls.routes[choices[last].id]
+        local _, _, rowY = lastRow:GetPoint()
+        local _, _, pagerY = nextPage:GetPoint()
+        assert(26 - rowY + lastRow:GetHeight() <= height - pagerY - nextPage:GetHeight(),
+            "Route rows clear the pager")
+    end
+
+    SecretCompassSecretDB.finishedRoutes[lateRoute.id] = { sourceURL = lateRoute.sourceURL }
+    UIParent:SetHeight(720)
+    fireAddonEvent("DISPLAY_SIZE_CHANGED")
+    assertPage(1, 14, 681)
+    assert(secrets.progress:GetText() == "1 of 18 Built-In Routes Finished",
+        "Completion includes finished routes off the current page")
+    SecretCompassSecretDB.finishedRoutes[lateRoute.id] = nil
+    click(nextPage)
+    assertPage(15, 18, 681)
+    local condor = controls.routes["condor-hatchling"]
+    click(condor)
+    assert(secrets.routeTitle:GetText() == "Condor Hatchling" and not range:IsVisible()
+        and not previousPage:IsVisible() and not nextPage:IsVisible() and not condor:IsVisible(),
+        "Tracking a route from a later page hides the catalog and pager")
+    click(controls.revealCoordinates)
+    click(controls.location)
+    click(controls.mapCommand)
+    assert(controls.mapCommandInput:GetText() == "/mappin 1432 77.70 74.90",
+        "Next Location reaches an alternate Lord Condar search area")
+    click(controls.stop)
+    assertPage(15, 18, 681)
+    click(previousPage)
+    assertPage(1, 14, 681)
+
+    faction = "Alliance"
+    choices = namespace.StandaloneSecrets()
+    UIParent:SetHeight(480)
+    fireAddonEvent("UI_SCALE_CHANGED")
+    assertPage(1, 6, 441)
+    click(nextPage)
+    assertPage(7, 12, 441)
+    click(nextPage)
+    assertPage(13, 18, 441)
+    click(nextPage)
+    assertPage(19, 19, 441)
+    faction = "Horde"
+    choices = namespace.StandaloneSecrets()
+    slash("secrets")
+    slash("secrets")
+    assertPage(13, 18, 441)
+    assert(not controls.routes["baby-crocolisk"]:IsVisible(), "The Alliance route stays hidden on the Horde page")
+    UIParent:SetHeight(720)
+    fireAddonEvent("DISPLAY_SIZE_CHANGED")
+    assertPage(15, 18, 681)
+    UIParent:SetHeight(1080)
+    fireAddonEvent("DISPLAY_SIZE_CHANGED")
+    assert(not range:IsVisible() and cozyButton:IsVisible() and controls.routes[lateRoute.id]:IsVisible(),
+        "A tall viewport restores the full catalog")
 end
 acceptedQuests[79007] = true
 click(cozyButton)
